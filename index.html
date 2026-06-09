@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spectrum Explorer</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Spectrum Explorer</h1>
+          <p class="file-status" id="fileStatus">No spectrum loaded</p>
+        </div>
+        <label class="file-button">
+          <input id="fileInput" type="file" accept=".txt,.dat,.ascii,.csv,.spec,.flm">
+          Load ASCII
+        </label>
+      </header>
+
+      <section class="workspace" aria-label="Spectrum plotting workspace">
+        <aside class="controls" aria-label="Spectrum controls">
+          <div class="control-group numeric-control">
+            <label for="redshiftInput">Redshift</label>
+            <input id="redshiftInput" type="number" step="0.0001" value="0" inputmode="decimal">
+            <input id="redshiftSlider" class="center-slider" type="range" min="-1" max="1" step="0.001" value="0" aria-label="Adjust redshift">
+          </div>
+          <div class="control-group numeric-control">
+            <label for="binningInput">Binning points</label>
+            <input id="binningInput" type="number" min="1" step="1" value="1" inputmode="numeric">
+          </div>
+          <div class="control-group numeric-control">
+            <label for="commonVelocityInput">Common line velocity (km/s)</label>
+            <input id="commonVelocityInput" type="number" step="1" value="0" inputmode="decimal">
+            <input id="commonVelocitySlider" class="center-slider" type="range" min="-1" max="1" step="0.001" value="0" aria-label="Adjust common line velocity">
+          </div>
+        </aside>
+
+        <section class="plot-panel" id="plotPanel" aria-label="Spectrum plot">
+          <canvas id="spectrumCanvas"></canvas>
+          <div class="plot-toolbar" aria-label="Plot tools">
+            <button id="dragZoomButton" type="button" title="Drag zoom">Drag Zoom</button>
+            <button id="zoomOutButton" type="button" title="Zoom out">-</button>
+            <button id="zoomInButton" type="button" title="Zoom in">+</button>
+            <button id="resetZoomButton" type="button" title="Reset zoom">Reset</button>
+          </div>
+          <div class="mouse-readout" id="mouseReadout">Rest x: - | Flux: -</div>
+          <div class="drop-hint" id="dropHint">Drop ASCII spectrum here</div>
+          <div class="empty-state" id="emptyState">
+            <strong>Load or drop a two-column ASCII spectrum</strong>
+            <span>Rows should contain wavelength in Angstrom and flux. Comment lines starting with #, %, ;, or // are ignored.</span>
+          </div>
+        </section>
+      </section>
+
+      <section class="line-table-section" aria-label="Spectral line table">
+        <div class="section-header">
+          <h2>Line List</h2>
+          <button id="addLineButton" type="button">Add Line</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Show</th>
+                <th>Species</th>
+                <th>Rest wavelength (A)</th>
+                <th>Velocity (km/s)</th>
+                <th>Observed wavelength (A)</th>
+                <th>Color</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="lineTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

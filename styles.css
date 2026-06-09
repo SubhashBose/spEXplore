@@ -1,0 +1,437 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f7f4;
+  --surface: #ffffff;
+  --surface-2: #ecefeb;
+  --text: #1c2422;
+  --muted: #66716d;
+  --border: #d8ded9;
+  --accent: #0f766e;
+  --accent-strong: #0b5f59;
+  --line: #243b53;
+  --grid: #e6eae6;
+  --danger: #b42318;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+}
+
+button, input { font: inherit; }
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+h1, h2, p { margin: 0; }
+
+h1 {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 720;
+  letter-spacing: 0;
+}
+
+h2 {
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.file-status {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.file-button, button {
+  min-height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #ffffff;
+  background: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.file-button:hover, button:hover { background: var(--accent-strong); }
+
+.file-button input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+  padding: 18px 24px;
+}
+
+.controls {
+  min-height: 50vh;
+  padding: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.control-group {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.control-group label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+input[type="number"], input[type="text"] {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+input[type="color"] {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  background: var(--surface);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.center-slider {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.plot-panel {
+  position: relative;
+  width: 75vw;
+  height: 50vh;
+  min-width: 420px;
+  min-height: 360px;
+  max-width: calc(100vw - 316px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.plot-panel.drag-over {
+  outline: 3px solid rgba(15, 118, 110, 0.38);
+  outline-offset: -3px;
+}
+
+#spectrumCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.plot-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.plot-toolbar button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border-color: rgba(28, 36, 34, 0.16);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(28, 36, 34, 0.08);
+}
+
+.plot-toolbar button:hover, .plot-toolbar button.active {
+  color: #ffffff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.mouse-readout {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  border: 1px solid rgba(28, 36, 34, 0.12);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 8px rgba(28, 36, 34, 0.08);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.drop-hint {
+  position: absolute;
+  inset: 14px;
+  z-index: 4;
+  display: none;
+  place-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  color: var(--accent-strong);
+  background: rgba(255, 255, 255, 0.82);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.plot-panel.drag-over .drop-hint { display: grid; }
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.empty-state strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.empty-state span {
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.empty-state.hidden { display: none; }
+
+.line-table-section {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+}
+
+.section-header button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.table-wrap {
+  padding: 0 24px 20px;
+  overflow: visible;
+}
+
+table, thead, tbody {
+  display: block;
+  width: 100%;
+}
+
+thead {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 10px;
+}
+
+.line-card {
+  display: grid;
+  grid-template-columns: 24px 12ch minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 34px 32px;
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: #fbfcfb;
+}
+
+.empty-line-row {
+  display: block;
+  border-top: 1px solid var(--border);
+}
+
+.empty-line-cell {
+  display: block;
+  padding: 12px 0;
+  font-size: 13px;
+}
+
+td {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.line-field-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.visibility-cell, .color-cell, .remove-cell {
+  justify-items: center;
+  text-align: center;
+  align-self: start;
+}
+
+.species-cell input {
+  width: 12ch;
+  max-width: 12ch;
+}
+
+.color-cell input[type="color"] {
+  width: 32px;
+  min-width: 32px;
+  padding: 2px;
+}
+
+.field-stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.numeric-cell input[type="number"] {
+  min-width: 0;
+}
+
+.remove-line {
+  width: 34px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--danger);
+  background: transparent;
+}
+
+.remove-line:hover {
+  color: #ffffff;
+  background: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 14px 16px;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    padding: 14px 16px;
+  }
+
+  .controls {
+    min-height: 0;
+  }
+
+  .plot-panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 50vh;
+  }
+
+  .section-header { padding: 12px 16px; }
+
+  .table-wrap { padding: 0 16px 18px; }
+
+  tbody { grid-template-columns: 1fr; }
+
+  .line-card {
+    grid-template-columns: 24px minmax(10ch, 12ch) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 34px 32px;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 640px) {
+  .visibility-cell, .color-cell, .remove-cell { align-self: start; }
+
+  .line-card {
+    grid-template-columns: 24px 12ch minmax(0, 1fr) 34px 32px;
+  }
+
+  .visibility-cell { grid-column: 1; grid-row: 1; }
+  .species-cell { grid-column: 2; grid-row: 1; }
+  .numeric-cell { grid-column: 1 / -1; }
+  .color-cell { grid-column: 4; grid-row: 1; }
+  .remove-cell { grid-column: 5; grid-row: 1; }
+}
+
+@media (max-width: 560px) {
+  .line-card {
+    grid-template-columns: 24px minmax(0, 1fr) 34px 32px;
+  }
+
+  .visibility-cell { grid-column: 1; grid-row: 1; }
+  .species-cell { grid-column: 2; grid-row: 1; }
+  .numeric-cell { grid-column: 1 / -1; }
+  .color-cell { grid-column: 3; grid-row: 1; }
+  .remove-cell { grid-column: 4; grid-row: 1; }
+}
+
