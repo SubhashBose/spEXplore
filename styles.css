@@ -81,17 +81,29 @@ h2 {
   border-color: var(--danger);
 }
 
+#fitProfileButton.active {
+  background: #c2410c;
+  border-color: #c2410c;
+}
+
+#fitProfileButton.active:hover {
+  background: #9a3412;
+  border-color: #9a3412;
+}
+
 #deleteSectionButton.active:hover {
   background: #9b1c12; /* Slightly darker shade of danger */
 }
 
-#spectrumCanvas.delete-mode-cursor {
+#spectrumCanvas.delete-mode-cursor,
+#spectrumCanvas.fit-mode-cursor {
   cursor: copy;
 }
 
-.deleted-sections-grid {
+.deleted-sections-grid,
+.fit-profiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -111,7 +123,8 @@ h2 {
   color: var(--text);
 }
 
-.delete-card .remove-btn {
+.delete-card .remove-btn,
+.fit-card .remove-btn {
   min-height: 28px;
   padding: 4px 8px;
   font-size: 12px;
@@ -120,7 +133,8 @@ h2 {
   border: 1px solid transparent;
 }
 
-.delete-card .remove-btn:hover {
+.delete-card .remove-btn:hover,
+.fit-card .remove-btn:hover {
   background: var(--danger);
   color: #ffffff;
 }
@@ -257,7 +271,8 @@ input[type="checkbox"] {
   overflow-wrap: anywhere;
 }
 
-.delete-hint {
+.delete-hint,
+.fit-hint {
   position: absolute;
   top: 14px;
   left: 50%;
@@ -274,8 +289,46 @@ input[type="checkbox"] {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
-.delete-hint.visible {
+.delete-hint.visible,
+.fit-hint.visible {
   display: block;
+}
+
+.fit-hint {
+  background: rgba(194, 65, 12, 0.86);
+}
+
+.fit-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.fit-card-title {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.fit-values {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.fit-values dt {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.fit-values dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .drop-hint {
@@ -442,6 +495,11 @@ td {
 .remove-line:hover {
   color: #ffffff;
   background: var(--danger);
+}
+
+aside.controls button {
+  margin: 3px 0;
+  padding: 5px 5px;
 }
 
 @media (max-width: 900px) {

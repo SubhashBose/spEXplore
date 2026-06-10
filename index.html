@@ -36,6 +36,7 @@
             <input id="commonVelocitySlider" class="center-slider" type="range" min="-1" max="1" step="0.001" value="0" aria-label="Adjust common line velocity">
           </div>
           <button id="deleteSectionButton" type="button">Delete section</button>
+          <button id="fitProfileButton" type="button">Fit profile</button>
         </aside>
 
         <section class="plot-panel" id="plotPanel" aria-label="Spectrum plot">
@@ -48,6 +49,7 @@
           </div>
           <div class="mouse-readout" id="mouseReadout">Rest x: - | Flux: -</div>
           <div class="delete-hint" id="deleteHint">Click two points to delete a section</div>
+          <div class="fit-hint" id="fitHint">Click two continuum points around the line</div>
           <div class="drop-hint" id="dropHint">Drop ASCII spectrum here</div>
           <div class="empty-state" id="emptyState">
             <strong>Load or drop a two-column ASCII spectrum</strong>
@@ -77,12 +79,21 @@
             <tbody id="lineTableBody"></tbody>
           </table>
         </div>
+      </section>
       <section class="line-table-section" aria-label="Deleted sections list">
         <div class="section-header">
           <h2>Deleted Sections</h2>
         </div>
         <div class="table-wrap">
           <div id="deletedSectionsList" class="deleted-sections-grid"></div>
+        </div>
+      </section>
+      <section class="line-table-section" aria-label="Fitted line profiles">
+        <div class="section-header">
+          <h2>Fitted line profiles</h2>
+        </div>
+        <div class="table-wrap">
+          <div id="fittedProfilesList" class="fit-profiles-grid"></div>
         </div>
       </section>
     </main>

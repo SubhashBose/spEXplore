@@ -28,7 +28,10 @@ const INBUILT_LINES = [
   { name: "H-alpha", rest: 6562.82 },
   { name: "[NII] 6584", rest: 6583.45 },
   { name: "[SII] 6716", rest: 6716.44 },
-  { name: "[SII] 6731", rest: 6730.82 }
+  { name: "[SII] 6731", rest: 6730.82 },
+  { name: "FeII 4924", rest: 4924 },
+  { name: "FeII 5018", rest: 5018 },
+  { name: "FeII 5169", rest: 5169 }
 ];
 
 const state = {
@@ -43,8 +46,11 @@ const state = {
     { visible: true, species: "H-beta", rest: "4861.33", velocity: "0", color: "#7c3aed" }
   ],
   deletedSections: [],
+  fittedProfiles: [],
   deleteMode: false,
   deletePoints: [],
+  fitMode: false,
+  fitPoints: [],
   zoom: null,
   dragZoomMode: false,
   dragStart: null,
@@ -72,8 +78,11 @@ const zoomOutButton = document.querySelector("#zoomOutButton");
 const resetZoomButton = document.querySelector("#resetZoomButton");
 const mouseReadout = document.querySelector("#mouseReadout");
 const deleteSectionButton = document.querySelector("#deleteSectionButton");
+const fitProfileButton = document.querySelector("#fitProfileButton");
 const deletedSectionsList = document.querySelector("#deletedSectionsList");
+const fittedProfilesList = document.querySelector("#fittedProfilesList");
 const deleteHint = document.querySelector("#deleteHint");
+const fitHint = document.querySelector("#fitHint");
 const speciesList = document.querySelector("#speciesList");
 const ctx = canvas.getContext("2d");
 
@@ -158,9 +167,31 @@ canvas.addEventListener("mouseleave", () => {
   drawSpectrum();
 });
 canvas.addEventListener("mousedown", event => {
+  if (state.fitMode && isInsidePlot(event)) {
+    const fitPoint = plotValueFromEvent(event);
+    state.fitPoints.push(fitPoint);
+
+    if (state.fitPoints.length === 2) {
+      const fit = fitGaussianProfile(state.fitPoints[0], state.fitPoints[1]);
+      state.fitMode = false;
+      state.fitPoints = [];
+      fitProfileButton.classList.remove("active");
+      fitHint.classList.remove("visible");
+      canvas.classList.remove("fit-mode-cursor");
+      if (fit) {
+        state.fittedProfiles.push(fit);
+      } else {
+        mouseReadout.textContent = "Fit failed: choose a wider range with at least five spectrum points.";
+      }
+      renderAll();
+    } else {
+      drawSpectrum();
+    }
+    return;
+  }
+
   if (state.deleteMode && isInsidePlot(event)) {
-    const point = canvasPoint(event);
-    const restX = pxToValue(point.x, state.plotArea.left, canvas.clientWidth - state.plotArea.right, state.currentDomain.min, state.currentDomain.max);
+    const { restX } = plotValueFromEvent(event);
     const observedX = restX * redshiftFactor();
     state.deletePoints.push(observedX);
 
@@ -189,6 +220,28 @@ deleteSectionButton.addEventListener("click", () => {
   deleteHint.classList.toggle("visible", state.deleteMode);
   canvas.classList.toggle("delete-mode-cursor", state.deleteMode);
   if (state.deleteMode) {
+    state.fitMode = false;
+    state.fitPoints = [];
+    fitProfileButton.classList.remove("active");
+    fitHint.classList.remove("visible");
+    canvas.classList.remove("fit-mode-cursor");
+    state.dragZoomMode = false;
+    dragZoomButton.classList.remove("active");
+  }
+});
+
+fitProfileButton.addEventListener("click", () => {
+  state.fitMode = !state.fitMode;
+  state.fitPoints = [];
+  fitProfileButton.classList.toggle("active", state.fitMode);
+  fitHint.classList.toggle("visible", state.fitMode);
+  canvas.classList.toggle("fit-mode-cursor", state.fitMode);
+  if (state.fitMode) {
+    state.deleteMode = false;
+    state.deletePoints = [];
+    deleteSectionButton.classList.remove("active");
+    deleteHint.classList.remove("visible");
+    canvas.classList.remove("delete-mode-cursor");
     state.dragZoomMode = false;
     dragZoomButton.classList.remove("active");
   }
@@ -199,6 +252,18 @@ window.addEventListener("resize", drawSpectrum);
 dragZoomButton.addEventListener("click", () => {
   state.dragZoomMode = !state.dragZoomMode;
   dragZoomButton.classList.toggle("active", state.dragZoomMode);
+  if (state.dragZoomMode) {
+    state.deleteMode = false;
+    state.deletePoints = [];
+    deleteSectionButton.classList.remove("active");
+    deleteHint.classList.remove("visible");
+    canvas.classList.remove("delete-mode-cursor");
+    state.fitMode = false;
+    state.fitPoints = [];
+    fitProfileButton.classList.remove("active");
+    fitHint.classList.remove("visible");
+    canvas.classList.remove("fit-mode-cursor");
+  }
 });
 resetZoomButton.addEventListener("click", () => {
   state.zoom = null;
@@ -218,6 +283,12 @@ async function loadSpectrumFile(file) {
     state.spectrum = spectrum;
     state.fileName = file.name;
     state.zoom = null;
+    state.fittedProfiles = [];
+    state.fitMode = false;
+    state.fitPoints = [];
+    fitProfileButton.classList.remove("active");
+    fitHint.classList.remove("visible");
+    canvas.classList.remove("fit-mode-cursor");
     fileStatus.textContent = `${file.name} - ${spectrum.length.toLocaleString()} points`;
     renderAll();
   } catch (error) {
@@ -252,6 +323,7 @@ function parseSpectrum(text) {
 function renderAll() {
   renderLineTable();
   renderDeletedSections();
+  renderFittedProfiles();
   drawSpectrum();
 }
 
@@ -285,6 +357,54 @@ function renderDeletedSections() {
     card.append(label, btn);
     deletedSectionsList.append(card);
   });
+}
+
+function renderFittedProfiles() {
+  fittedProfilesList.replaceChildren();
+  if (state.fittedProfiles.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.color = "var(--muted)";
+    empty.style.fontSize = "13px";
+    empty.textContent = "No fitted profiles yet.";
+    fittedProfilesList.append(empty);
+    return;
+  }
+
+  state.fittedProfiles.forEach((profile, index) => {
+    const card = document.createElement("div");
+    card.className = "fit-card";
+
+    const title = document.createElement("div");
+    title.className = "fit-card-title";
+    title.textContent = `${profile.kind} profile ${index + 1}`;
+
+    const values = document.createElement("dl");
+    values.className = "fit-values";
+    appendFitValue(values, "Mean", `${formatNumber(profile.mean)} A`);
+    appendFitValue(values, "FWHM", `${formatNumber(profile.fwhm)} A`);
+    appendFitValue(values, "pEW", `${formatNumber(profile.pEW)} A`);
+    appendFitValue(values, "Range", `${formatNumber(profile.minX)}-${formatNumber(profile.maxX)} A`);
+
+    const button = document.createElement("button");
+    button.className = "remove-btn";
+    button.type = "button";
+    button.textContent = "Remove";
+    button.addEventListener("click", () => {
+      state.fittedProfiles.splice(index, 1);
+      renderAll();
+    });
+
+    card.append(title, values, button);
+    fittedProfilesList.append(card);
+  });
+}
+
+function appendFitValue(list, label, value) {
+  const term = document.createElement("dt");
+  const description = document.createElement("dd");
+  term.textContent = label;
+  description.textContent = value;
+  list.append(term, description);
 }
 
 function renderLineTable() {
@@ -552,6 +672,8 @@ function drawSpectrum() {
   state.currentRange = range;
   drawAxes(width, height, plot, domain, range);
   drawSpectrumLine(points, width, height, plot, domain, range);
+  drawFittedProfiles(width, height, plot, domain, range);
+  drawFitSelection(width, height, plot, domain, range);
   drawSpectralLines(width, height, plot, domain);
   drawSelectionBox();
 }
@@ -731,6 +853,234 @@ function drawSpectralLines(width, height, plot, domain) {
   });
 }
 
+function drawFitSelection(width, height, plot, domain, range) {
+  if (!state.fitMode || state.fitPoints.length === 0) return;
+
+  const xToPx = makeScale(domain.min, domain.max, plot.left, width - plot.right);
+  const yToPx = makeScale(range.min, range.max, height - plot.bottom, plot.top);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plot.left, plot.top, width - plot.left - plot.right, height - plot.top - plot.bottom);
+  ctx.clip();
+  ctx.strokeStyle = "#c2410c";
+  ctx.fillStyle = "#c2410c";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+
+  if (state.fitPoints.length === 2) {
+    ctx.beginPath();
+    ctx.moveTo(xToPx(state.fitPoints[0].restX), yToPx(state.fitPoints[0].flux));
+    ctx.lineTo(xToPx(state.fitPoints[1].restX), yToPx(state.fitPoints[1].flux));
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+  state.fitPoints.forEach(point => {
+    ctx.beginPath();
+    ctx.arc(xToPx(point.restX), yToPx(point.flux), 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawFittedProfiles(width, height, plot, domain, range) {
+  if (state.fittedProfiles.length === 0) return;
+
+  const xToPx = makeScale(domain.min, domain.max, plot.left, width - plot.right);
+  const yToPx = makeScale(range.min, range.max, height - plot.bottom, plot.top);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(plot.left, plot.top, width - plot.left - plot.right, height - plot.top - plot.bottom);
+  ctx.clip();
+
+  state.fittedProfiles.forEach(profile => {
+    if (profile.maxX < domain.min || profile.minX > domain.max) return;
+
+    const color = profile.amplitude >= 0 ? "#c2410c" : "#1d4ed8";
+    const samples = profileSamples(profile, 160);
+
+    ctx.strokeStyle = "#66716d";
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xToPx(profile.minX), yToPx(continuumAt(profile, profile.minX)));
+    ctx.lineTo(xToPx(profile.maxX), yToPx(continuumAt(profile, profile.maxX)));
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    samples.forEach((sample, index) => {
+      const x = xToPx(sample.x);
+      const y = yToPx(sample.y);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    if (profile.mean >= domain.min && profile.mean <= domain.max) {
+      const baseY = continuumAt(profile, profile.mean);
+      const peakY = baseY + profile.amplitude;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xToPx(profile.mean), yToPx(baseY));
+      ctx.lineTo(xToPx(profile.mean), yToPx(peakY));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  });
+
+  ctx.restore();
+}
+
+function fitGaussianProfile(firstPoint, secondPoint) {
+  const minX = Math.min(firstPoint.restX, secondPoint.restX);
+  const maxX = Math.max(firstPoint.restX, secondPoint.restX);
+  const span = maxX - minX;
+  if (!Number.isFinite(span) || span <= 0) return null;
+
+  const continuum = continuumFromPoints(firstPoint, secondPoint);
+  const samples = currentSpectrumPoints().filter(point => point.restX >= minX && point.restX <= maxX);
+  if (samples.length < 5) return null;
+
+  const residuals = samples.map(point => ({
+    x: point.restX,
+    residual: point.flux - lineAt(continuum, point.restX)
+  }));
+  const strongest = residuals.reduce((best, point) => Math.abs(point.residual) > Math.abs(best.residual) ? point : best, residuals[0]);
+
+  const minSigma = Math.max(span / 250, 1e-9);
+  const maxSigma = Math.max(span, minSigma * 2);
+  let mu = strongest.x;
+  let sigma = Math.max(span / 6, minSigma);
+  let fit = solveAmplitude(residuals, mu, sigma);
+  let stepMu = span / 8;
+  let stepSigma = span / 8;
+
+  for (let iteration = 0; iteration < 80; iteration += 1) {
+    let improved = false;
+    const candidates = [
+      { mu: mu - stepMu, sigma },
+      { mu: mu + stepMu, sigma },
+      { mu, sigma: sigma - stepSigma },
+      { mu, sigma: sigma + stepSigma },
+      { mu: mu - stepMu, sigma: sigma - stepSigma },
+      { mu: mu - stepMu, sigma: sigma + stepSigma },
+      { mu: mu + stepMu, sigma: sigma - stepSigma },
+      { mu: mu + stepMu, sigma: sigma + stepSigma }
+    ];
+
+    candidates.forEach(candidate => {
+      const candidateMu = Math.min(Math.max(candidate.mu, minX), maxX);
+      const candidateSigma = Math.min(Math.max(candidate.sigma, minSigma), maxSigma);
+      const candidateFit = solveAmplitude(residuals, candidateMu, candidateSigma);
+      if (candidateFit.sse < fit.sse) {
+        mu = candidateMu;
+        sigma = candidateSigma;
+        fit = candidateFit;
+        improved = true;
+      }
+    });
+
+    if (!improved) {
+      stepMu *= 0.55;
+      stepSigma *= 0.55;
+      if (stepMu < span / 10000 && stepSigma < span / 10000) break;
+    }
+  }
+
+  const profile = {
+    minX,
+    maxX,
+    continuum,
+    amplitude: fit.amplitude,
+    mean: mu,
+    sigma,
+    fwhm: 2 * Math.sqrt(2 * Math.log(2)) * sigma,
+    kind: fit.amplitude >= 0 ? "Emission" : "Absorption"
+  };
+  profile.pEW = pseudoEquivalentWidth(profile, 240);
+  return profile;
+}
+
+function continuumFromPoints(firstPoint, secondPoint) {
+  const dx = secondPoint.restX - firstPoint.restX || 1e-12;
+  const slope = (secondPoint.flux - firstPoint.flux) / dx;
+  return {
+    x1: firstPoint.restX,
+    y1: firstPoint.flux,
+    x2: secondPoint.restX,
+    y2: secondPoint.flux,
+    slope,
+    intercept: firstPoint.flux - slope * firstPoint.restX
+  };
+}
+
+function lineAt(line, x) {
+  return line.slope * x + line.intercept;
+}
+
+function continuumAt(profile, x) {
+  return lineAt(profile.continuum, x);
+}
+
+function gaussianValue(amplitude, mean, sigma, x) {
+  const z = (x - mean) / sigma;
+  return amplitude * Math.exp(-0.5 * z * z);
+}
+
+function solveAmplitude(points, mean, sigma) {
+  let numerator = 0;
+  let denominator = 0;
+  points.forEach(point => {
+    const basis = Math.exp(-0.5 * ((point.x - mean) / sigma) ** 2);
+    numerator += point.residual * basis;
+    denominator += basis * basis;
+  });
+  const amplitude = denominator > 0 ? numerator / denominator : 0;
+  let sse = 0;
+  points.forEach(point => {
+    const model = gaussianValue(amplitude, mean, sigma, point.x);
+    const error = point.residual - model;
+    sse += error * error;
+  });
+  return { amplitude, sse };
+}
+
+function profileSamples(profile, count) {
+  const samples = [];
+  const steps = Math.max(2, count);
+  for (let index = 0; index <= steps; index += 1) {
+    const t = index / steps;
+    const x = profile.minX + t * (profile.maxX - profile.minX);
+    samples.push({
+      x,
+      y: continuumAt(profile, x) + gaussianValue(profile.amplitude, profile.mean, profile.sigma, x)
+    });
+  }
+  return samples;
+}
+
+function pseudoEquivalentWidth(profile, count) {
+  const samples = profileSamples(profile, count);
+  let area = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    const previousBase = continuumAt(profile, previous.x);
+    const currentBase = continuumAt(profile, current.x);
+    const previousNorm = Math.abs(previousBase) > 1e-12 ? 1 - previous.y / previousBase : 0;
+    const currentNorm = Math.abs(currentBase) > 1e-12 ? 1 - current.y / currentBase : 0;
+    area += 0.5 * (previousNorm + currentNorm) * (current.x - previous.x);
+  }
+  return area;
+}
+
 function handleMouseMove(event) {
   if (!state.currentDomain || !state.currentRange || !state.plotArea) return;
   const point = canvasPoint(event);
@@ -808,6 +1158,17 @@ function zoomRange(range, factor) {
   const center = (range.min + range.max) / 2;
   const half = ((range.max - range.min) * factor) / 2;
   return { min: center - half, max: center + half };
+}
+
+function plotValueFromEvent(event) {
+  const point = canvasPoint(event);
+  const plot = state.plotArea;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  return {
+    restX: pxToValue(point.x, plot.left, width - plot.right, state.currentDomain.min, state.currentDomain.max),
+    flux: pxToValue(point.y, height - plot.bottom, plot.top, state.currentRange.min, state.currentRange.max)
+  };
 }
 
 function isInsidePlot(event) {
