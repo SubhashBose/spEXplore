@@ -1068,14 +1068,21 @@ function profileSamples(profile, count) {
 
 function pseudoEquivalentWidth(profile, count) {
   const samples = profileSamples(profile, count);
+  // Use a relative threshold based on the peak continuum value to handle
+  // any flux scale (including typical astro units like 1e-17 erg/s/cm²/Å)
+  const peakContinuum = Math.max(
+    Math.abs(continuumAt(profile, profile.minX)),
+    Math.abs(continuumAt(profile, profile.maxX))
+  );
+  const threshold = peakContinuum * 1e-10;
   let area = 0;
   for (let index = 1; index < samples.length; index += 1) {
     const previous = samples[index - 1];
     const current = samples[index];
     const previousBase = continuumAt(profile, previous.x);
     const currentBase = continuumAt(profile, current.x);
-    const previousNorm = Math.abs(previousBase) > 1e-12 ? 1 - previous.y / previousBase : 0;
-    const currentNorm = Math.abs(currentBase) > 1e-12 ? 1 - current.y / currentBase : 0;
+    const previousNorm = Math.abs(previousBase) > threshold ? 1 - previous.y / previousBase : 0;
+    const currentNorm = Math.abs(currentBase) > threshold ? 1 - current.y / currentBase : 0;
     area += 0.5 * (previousNorm + currentNorm) * (current.x - previous.x);
   }
   return area;
