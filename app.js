@@ -1,4 +1,16 @@
 const SPEED_OF_LIGHT_KMS = 299792.458;
+
+// Shared input handler for any free-text decimal field (velocity, wavelength).
+// Calls setValue only when the raw string represents a complete finite number;
+// silently ignores incomplete states like "-", ".", "-.", or "3000." so the
+// user can type naturally without the field resetting under their cursor.
+function onDecimalInput(rawValue, setValue) {
+  const raw = rawValue.trim();
+  if (raw === "" || raw === "-" || raw === "." || raw === "-.") return;
+  if (raw.endsWith(".")) return;
+  const parsed = Number.parseFloat(raw);
+  if (Number.isFinite(parsed)) setValue(parsed);
+}
 const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#c2410c", "#1d4ed8"];
 
 const INBUILT_LINES = [
@@ -135,7 +147,7 @@ binningInput.addEventListener("change", () => {
 });
 
 commonVelocityInput.addEventListener("input", () => {
-  setCommonVelocity(Number.parseFloat(commonVelocityInput.value) || 0);
+  onDecimalInput(commonVelocityInput.value, setCommonVelocity);
 });
 
 attachCenteredSlider(commonVelocitySlider, () => state.commonVelocity, value => {
@@ -385,9 +397,23 @@ function renderFittedProfiles() {
     const card = document.createElement("div");
     card.className = "fit-card";
 
-    const title = document.createElement("div");
+    const header = document.createElement("div");
+    header.className = "fit-card-header";
+
+    const title = document.createElement("span");
     title.className = "fit-card-title";
     title.textContent = `${profile.kind} profile ${index + 1}`;
+
+    const visCheckbox = document.createElement("input");
+    visCheckbox.type = "checkbox";
+    visCheckbox.className = "fit-vis-checkbox";
+    visCheckbox.checked = profile.visible !== false;
+    visCheckbox.title = "Show on plot";
+    visCheckbox.addEventListener("change", () => {
+      profile.visible = visCheckbox.checked;
+      drawSpectrum();
+    });
+    header.append(title, visCheckbox);
 
     // --- Species + rest wavelength input row ---
     const lineIdRow = document.createElement("div");
@@ -490,7 +516,7 @@ function renderFittedProfiles() {
       renderAll();
     });
 
-    card.append(title, lineIdRow, values, button);
+    card.append(header, lineIdRow, values, button);
     fittedProfilesList.append(card);
   });
 }
@@ -622,8 +648,8 @@ function numericSliderCell(label, value, step, getValue, setValue) {
   const slider = document.createElement("input");
 
   wrap.className = "field-stack";
-  input.type = "number";
-  input.step = step;
+  input.type = "text";
+  input.inputMode = "decimal";
   input.value = value;
   slider.type = "range";
   slider.className = "center-slider";
@@ -632,7 +658,7 @@ function numericSliderCell(label, value, step, getValue, setValue) {
   slider.step = "0.001";
   slider.value = "0";
 
-  input.addEventListener("input", () => setValue(Number.parseFloat(input.value)));
+  input.addEventListener("input", () => onDecimalInput(input.value, setValue));
   attachCenteredSlider(slider, getValue, value => {
     setValue(value);
     input.value = formatInputValue(value, sliderDigits(step));
@@ -992,6 +1018,7 @@ function drawFittedProfiles(width, height, plot, domain, range) {
   ctx.clip();
 
   state.fittedProfiles.forEach(profile => {
+    if (profile.visible === false) return;
     if (profile.maxX < domain.min || profile.minX > domain.max) return;
 
     const color = profile.amplitude >= 0 ? "#c2410c" : "#1d4ed8";
@@ -1108,6 +1135,7 @@ function fitGaussianProfile(firstPoint, secondPoint) {
   let bestLine = null;
   let bestDist = Infinity;
   state.lines.forEach(line => {
+    if (line.visible === false) return;
     const obs = numericValue(line.observed);
     if (!Number.isFinite(obs)) return;
     const dist = Math.abs(obs - observedMean);

@@ -616,3 +616,19 @@ aside.controls button {
   background: var(--accent);
   color: #ffffff;
 }
+/* ── Fit card header (title + visibility checkbox) ─────────────────────── */
+
+.fit-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fit-vis-checkbox {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
