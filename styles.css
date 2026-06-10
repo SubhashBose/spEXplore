@@ -76,6 +76,55 @@ h2 {
   white-space: nowrap;
 }
 
+#deleteSectionButton.active {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+#deleteSectionButton.active:hover {
+  background: #9b1c12; /* Slightly darker shade of danger */
+}
+
+#spectrumCanvas.delete-mode-cursor {
+  cursor: copy;
+}
+
+.deleted-sections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.delete-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.delete-card .range-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.delete-card .remove-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid transparent;
+}
+
+.delete-card .remove-btn:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+
 .file-button:hover, button:hover { background: var(--accent-strong); }
 
 .file-button input {
@@ -206,6 +255,27 @@ input[type="checkbox"] {
   box-shadow: 0 2px 8px rgba(28, 36, 34, 0.08);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.delete-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: none;
+  padding: 8px 16px;
+  background: rgba(180, 35, 24, 0.85);
+  color: #ffffff;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 13px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.delete-hint.visible {
+  display: block;
 }
 
 .drop-hint {
@@ -340,8 +410,8 @@ td {
 }
 
 .species-cell input {
-  width: 12ch;
-  max-width: 12ch;
+  width: 13ch;
+  max-width: 13ch;
 }
 
 .color-cell input[type="color"] {

@@ -1,13 +1,50 @@
 const SPEED_OF_LIGHT_KMS = 299792.458;
 const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#c2410c", "#1d4ed8"];
 
+const INBUILT_LINES = [
+  { name: "Ly-alpha", rest: 1215.67 },
+  { name: "NV 1240", rest: 1240.14 },
+  { name: "OI 1302", rest: 1302.17 },
+  { name: "CII 1335", rest: 1335.71 },
+  { name: "SiIV 1393", rest: 1393.76 },
+  { name: "SiIV 1402", rest: 1402.77 },
+  { name: "CIV 1548", rest: 1548.19 },
+  { name: "CIV 1550", rest: 1550.77 },
+  { name: "HeII 1640", rest: 1640.42 },
+  { name: "CIII] 1909", rest: 1908.73 },
+  { name: "CII] 2326", rest: 2326.50 },
+  { name: "MgII 2796", rest: 2796.35 },
+  { name: "MgII 2803", rest: 2803.53 },
+  { name: "[OII] 3727", rest: 3727.09 },
+  { name: "CaII K", rest: 3933.66 },
+  { name: "CaII H", rest: 3968.47 },
+  { name: "H-delta", rest: 4101.74 },
+  { name: "H-gamma", rest: 4340.47 },
+  { name: "H-beta", rest: 4861.33 },
+  { name: "[OIII] 4959", rest: 4958.91 },
+  { name: "[OIII] 5007", rest: 5006.84 },
+  { name: "HeI 5876", rest: 5875.62 },
+  { name: "[OI] 6300", rest: 6300.30 },
+  { name: "H-alpha", rest: 6562.82 },
+  { name: "[NII] 6584", rest: 6583.45 },
+  { name: "[SII] 6716", rest: 6716.44 },
+  { name: "[SII] 6731", rest: 6730.82 }
+];
+
 const state = {
   spectrum: [],
   fileName: "",
   redshift: 0,
   binSize: 1,
   commonVelocity: 0,
-  lines: [],
+  lines: [
+    { visible: true, species: "H-alpha", rest: "6562.82", velocity: "0", color: "#b42318" },
+    { visible: true, species: "[OIII] 5007", rest: "5006.84", velocity: "0", color: "#0f766e" },
+    { visible: true, species: "H-beta", rest: "4861.33", velocity: "0", color: "#7c3aed" }
+  ],
+  deletedSections: [],
+  deleteMode: false,
+  deletePoints: [],
   zoom: null,
   dragZoomMode: false,
   dragStart: null,
@@ -34,7 +71,18 @@ const zoomInButton = document.querySelector("#zoomInButton");
 const zoomOutButton = document.querySelector("#zoomOutButton");
 const resetZoomButton = document.querySelector("#resetZoomButton");
 const mouseReadout = document.querySelector("#mouseReadout");
+const deleteSectionButton = document.querySelector("#deleteSectionButton");
+const deletedSectionsList = document.querySelector("#deletedSectionsList");
+const deleteHint = document.querySelector("#deleteHint");
+const speciesList = document.querySelector("#speciesList");
 const ctx = canvas.getContext("2d");
+
+// Initialize datalist
+INBUILT_LINES.forEach(line => {
+  const option = document.createElement("option");
+  option.value = line.name;
+  speciesList.appendChild(option);
+});
 
 fileInput.addEventListener("change", event => {
   const file = event.target.files[0];
@@ -110,9 +158,40 @@ canvas.addEventListener("mouseleave", () => {
   drawSpectrum();
 });
 canvas.addEventListener("mousedown", event => {
+  if (state.deleteMode && isInsidePlot(event)) {
+    const point = canvasPoint(event);
+    const restX = pxToValue(point.x, state.plotArea.left, canvas.clientWidth - state.plotArea.right, state.currentDomain.min, state.currentDomain.max);
+    const observedX = restX * redshiftFactor();
+    state.deletePoints.push(observedX);
+
+    if (state.deletePoints.length === 2) {
+      const min = Math.min(...state.deletePoints);
+      const max = Math.max(...state.deletePoints);
+      state.deletedSections.push({ min, max });
+      state.deleteMode = false;
+      state.deletePoints = [];
+      deleteSectionButton.classList.remove("active");
+      deleteHint.classList.remove("visible");
+      canvas.classList.remove("delete-mode-cursor");
+      renderAll();
+    }
+    return;
+  }
   if (!state.dragZoomMode || !state.spectrum.length || !isInsidePlot(event)) return;
   state.dragStart = canvasPoint(event);
   state.dragCurrent = state.dragStart;
+});
+
+deleteSectionButton.addEventListener("click", () => {
+  state.deleteMode = !state.deleteMode;
+  state.deletePoints = [];
+  deleteSectionButton.classList.toggle("active", state.deleteMode);
+  deleteHint.classList.toggle("visible", state.deleteMode);
+  canvas.classList.toggle("delete-mode-cursor", state.deleteMode);
+  if (state.deleteMode) {
+    state.dragZoomMode = false;
+    dragZoomButton.classList.remove("active");
+  }
 });
 window.addEventListener("mouseup", finishDragZoom);
 
@@ -172,7 +251,40 @@ function parseSpectrum(text) {
 
 function renderAll() {
   renderLineTable();
+  renderDeletedSections();
   drawSpectrum();
+}
+
+function renderDeletedSections() {
+  deletedSectionsList.replaceChildren();
+  if (state.deletedSections.length === 0) {
+    const empty = document.createElement("div");
+    empty.style.color = "var(--muted)";
+    empty.style.fontSize = "13px";
+    empty.textContent = "No sections deleted.";
+    deletedSectionsList.append(empty);
+    return;
+  }
+
+  const factor = redshiftFactor();
+  state.deletedSections.forEach((section, index) => {
+    const card = document.createElement("div");
+    card.className = "delete-card";
+    const label = document.createElement("span");
+    label.className = "range-label";
+    const restMin = section.min / factor;
+    const restMax = section.max / factor;
+    label.textContent = `${restMin.toFixed(2)} - ${restMax.toFixed(2)} A (Rest)`;
+    const btn = document.createElement("button");
+    btn.className = "remove-btn";
+    btn.textContent = "Undelete";
+    btn.addEventListener("click", () => {
+      state.deletedSections.splice(index, 1);
+      renderAll();
+    });
+    card.append(label, btn);
+    deletedSectionsList.append(card);
+  });
 }
 
 function renderLineTable() {
@@ -227,6 +339,10 @@ function renderLineTable() {
       textCell("Species", line.species, value => {
         line.species = value;
         drawSpectrum();
+      }, (rest) => {
+        line.rest = formatInputValue(rest, 3);
+        syncLineObserved(line);
+        renderAll();
       }),
       numericSliderCell("Rest A", line.rest, "0.001", () => numericValue(line.rest), value => {
         line.rest = formatInputValue(value, 3);
@@ -264,13 +380,20 @@ function visibilityCell(label, line, onInput) {
   return cell;
 }
 
-function textCell(label, value, onInput) {
+function textCell(label, value, onInput, onSpeciesSelect) {
   const cell = document.createElement("td");
   cell.className = "species-cell";
   const input = document.createElement("input");
   input.type = "text";
+  input.setAttribute("list", "speciesList");
   input.value = value;
   input.addEventListener("input", () => onInput(input.value));
+  input.addEventListener("change", () => {
+    const found = INBUILT_LINES.find(l => l.name === input.value);
+    if (found) {
+      onSpeciesSelect(found.rest);
+    }
+  });
   cell.append(fieldLabel(label), input);
   return cell;
 }
@@ -435,11 +558,16 @@ function drawSpectrum() {
 
 function currentSpectrumPoints() {
   const factor = redshiftFactor();
-  const points = state.spectrum.map(point => ({
+  let points = state.spectrum.map(point => ({
     observedX: point.wavelength,
     restX: point.wavelength / factor,
     flux: point.flux
   }));
+
+  if (state.deletedSections.length > 0) {
+    points = points.filter(p => !state.deletedSections.some(s => p.observedX >= s.min && p.observedX <= s.max));
+  }
+
   return movingAveragePoints(points, state.binSize);
 }
 
