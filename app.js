@@ -85,6 +85,9 @@ const deleteHint = document.querySelector("#deleteHint");
 const fitHint = document.querySelector("#fitHint");
 const speciesList = document.querySelector("#speciesList");
 const ctx = canvas.getContext("2d");
+const saveSessionButton = document.querySelector("#saveSessionButton");
+const loadSessionButton = document.querySelector("#loadSessionButton");
+const sessionFileInput = document.querySelector("#sessionFileInput");
 
 // Initialize datalist
 INBUILT_LINES.forEach(line => {
@@ -102,6 +105,14 @@ redshiftInput.addEventListener("input", () => {
   state.redshift = Number.parseFloat(redshiftInput.value) || 0;
   state.zoom = null;
   renderAll();
+});
+
+saveSessionButton.addEventListener("click", saveSession);
+loadSessionButton.addEventListener("click", () => sessionFileInput.click());
+sessionFileInput.addEventListener("change", event => {
+  const file = event.target.files[0];
+  if (file) loadSession(file);
+  sessionFileInput.value = "";
 });
 
 attachCenteredSlider(redshiftSlider, () => state.redshift, value => {
@@ -1167,6 +1178,167 @@ function profileSamples(profile, count) {
     });
   }
   return samples;
+}
+
+
+// ─── Session save / load ────────────────────────────────────────────────────
+
+const SESSION_VERSION = 1;
+
+function saveSession() {
+  // Serialise only the persistent, restorable parts of state.
+  // Transient UI interaction state (deleteMode, fitMode, dragZoom etc.) is
+  // intentionally excluded — it resets cleanly on load.
+  const session = {
+    version: SESSION_VERSION,
+    fileName: state.fileName,
+    redshift: state.redshift,
+    binSize: state.binSize,
+    commonVelocity: state.commonVelocity,
+    zoom: state.zoom,
+    spectrum: state.spectrum,            // [{wavelength, flux}, ...]
+    lines: state.lines.map(l => ({      // shallow copy, all fields are primitives
+      visible: l.visible,
+      species: l.species,
+      rest: l.rest,
+      velocity: l.velocity,
+      observed: l.observed,
+      color: l.color
+    })),
+    deletedSections: state.deletedSections.map(s => ({ min: s.min, max: s.max })),
+    fittedProfiles: state.fittedProfiles.map(p => ({
+      minX: p.minX,
+      maxX: p.maxX,
+      amplitude: p.amplitude,
+      mean: p.mean,
+      sigma: p.sigma,
+      fwhm: p.fwhm,
+      pEW: p.pEW,
+      kind: p.kind,
+      species: p.species,
+      lineRest: p.lineRest,
+      continuum: {
+        x1: p.continuum.x1,
+        y1: p.continuum.y1,
+        x2: p.continuum.x2,
+        y2: p.continuum.y2,
+        slope: p.continuum.slope,
+        intercept: p.continuum.intercept
+      }
+    }))
+  };
+
+  const json = JSON.stringify(session);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  // Use spectrum filename as base, or "session" if none loaded
+  const base = state.fileName ? state.fileName.replace(/\.[^.]+$/, "") : "session";
+  anchor.href = url;
+  anchor.download = `${base}.spx`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadSession(file) {
+  let session;
+  try {
+    const text = await file.text();
+    session = JSON.parse(text);
+  } catch {
+    fileStatus.textContent = "Session load failed: file is not valid JSON.";
+    return;
+  }
+
+  if (!session || session.version !== SESSION_VERSION) {
+    fileStatus.textContent = "Session load failed: unrecognised session format.";
+    return;
+  }
+
+  // ── Restore spectrum ──────────────────────────────────────────────────────
+  state.spectrum = Array.isArray(session.spectrum) ? session.spectrum : [];
+  state.fileName = typeof session.fileName === "string" ? session.fileName : "";
+
+  // ── Restore scalar settings ───────────────────────────────────────────────
+  state.redshift = Number.isFinite(session.redshift) ? session.redshift : 0;
+  state.binSize = Number.isFinite(session.binSize) && session.binSize >= 1
+    ? Math.round(session.binSize) : 1;
+  state.commonVelocity = Number.isFinite(session.commonVelocity) ? session.commonVelocity : 0;
+  state.zoom = session.zoom && Number.isFinite(session.zoom.x?.min) ? session.zoom : null;
+
+  // ── Restore line list ─────────────────────────────────────────────────────
+  state.lines = Array.isArray(session.lines)
+    ? session.lines.map(l => ({
+        visible: l.visible !== false,
+        species: String(l.species || ""),
+        rest: String(l.rest || ""),
+        velocity: String(l.velocity || "0"),
+        observed: String(l.observed || ""),
+        color: typeof l.color === "string" ? l.color : DEFAULT_LINE_COLORS[0]
+      }))
+    : [];
+
+  // ── Restore deleted sections ──────────────────────────────────────────────
+  state.deletedSections = Array.isArray(session.deletedSections)
+    ? session.deletedSections.filter(s => Number.isFinite(s.min) && Number.isFinite(s.max))
+    : [];
+
+  // ── Restore fitted profiles ───────────────────────────────────────────────
+  state.fittedProfiles = Array.isArray(session.fittedProfiles)
+    ? session.fittedProfiles
+        .filter(p => p && Number.isFinite(p.mean) && p.continuum)
+        .map(p => ({
+          minX: p.minX,
+          maxX: p.maxX,
+          amplitude: p.amplitude,
+          mean: p.mean,
+          sigma: p.sigma,
+          fwhm: p.fwhm,
+          pEW: p.pEW,
+          kind: typeof p.kind === "string" ? p.kind : "Emission",
+          species: String(p.species || ""),
+          lineRest: String(p.lineRest || ""),
+          continuum: {
+            x1: p.continuum.x1,
+            y1: p.continuum.y1,
+            x2: p.continuum.x2,
+            y2: p.continuum.y2,
+            slope: p.continuum.slope,
+            intercept: p.continuum.intercept
+          }
+        }))
+    : [];
+
+  // ── Reset transient interaction state ────────────────────────────────────
+  state.deleteMode = false;
+  state.deletePoints = [];
+  state.fitMode = false;
+  state.fitPoints = [];
+  state.dragZoomMode = false;
+  state.dragStart = null;
+  state.dragCurrent = null;
+  deleteSectionButton.classList.remove("active");
+  deleteHint.classList.remove("visible");
+  canvas.classList.remove("delete-mode-cursor");
+  fitProfileButton.classList.remove("active");
+  fitHint.classList.remove("visible");
+  canvas.classList.remove("fit-mode-cursor");
+  dragZoomButton.classList.remove("active");
+
+  // ── Sync UI controls to restored values ──────────────────────────────────
+  redshiftInput.value = formatInputValue(state.redshift, 6);
+  redshiftSlider.value = "0";
+  binningInput.value = String(state.binSize);
+  commonVelocityInput.value = formatInputValue(state.commonVelocity, 3);
+  commonVelocitySlider.value = "0";
+
+  if (state.spectrum.length > 0) {
+    fileStatus.textContent = `${state.fileName} — ${state.spectrum.length.toLocaleString()} points (session)`;
+  } else {
+    fileStatus.textContent = state.fileName ? `${state.fileName} — no spectrum data` : "No spectrum loaded";
+  }
+
+  renderAll();
 }
 
 function pseudoEquivalentWidth(profile, count) {

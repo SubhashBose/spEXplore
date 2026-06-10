@@ -596,3 +596,23 @@ aside.controls button {
 .fit-rest-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
 }
+
+/* ── Session buttons & topbar action group ─────────────────────────────── */
+
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.session-button {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.session-button:hover {
+  background: var(--accent);
+  color: #ffffff;
+}

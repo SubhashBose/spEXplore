@@ -13,10 +13,15 @@
           <h1>spEXplore</h1>
           <p class="file-status" id="fileStatus">No spectrum loaded</p>
         </div>
-        <label class="file-button">
-          <input id="fileInput" type="file" accept=".txt,.dat,.ascii,.csv,.spec,.flm">
-          Load ASCII
-        </label>
+        <div class="topbar-actions">
+          <button id="saveSessionButton" type="button" class="session-button">Save Session</button>
+          <button id="loadSessionButton" type="button" class="session-button">Load Session</button>
+          <input id="sessionFileInput" type="file" accept=".spx" style="display:none">
+          <label class="file-button">
+            <input id="fileInput" type="file" accept=".txt,.dat,.ascii,.csv,.spec,.flm">
+            Load ASCII
+          </label>
+        </div>
       </header>
 
       <section class="workspace" aria-label="Spectrum plotting workspace">
