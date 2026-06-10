@@ -103,7 +103,7 @@ h2 {
 .deleted-sections-grid,
 .fit-profiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
 
@@ -563,3 +563,36 @@ aside.controls button {
   .remove-cell { grid-column: 4; grid-row: 1; }
 }
 
+.fit-line-id-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fit-field-wrap {
+  display: grid;
+  gap: 4px;
+}
+
+.fit-species-input,
+.fit-rest-input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 7px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
+}
+
+.fit-rest-input {
+  /* number inputs look odd with spinners at small size */
+  -moz-appearance: textfield;
+}
+
+.fit-rest-input::-webkit-outer-spin-button,
+.fit-rest-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}

@@ -378,12 +378,97 @@ function renderFittedProfiles() {
     title.className = "fit-card-title";
     title.textContent = `${profile.kind} profile ${index + 1}`;
 
+    // --- Species + rest wavelength input row ---
+    const lineIdRow = document.createElement("div");
+    lineIdRow.className = "fit-line-id-row";
+
+    const speciesWrap = document.createElement("div");
+    speciesWrap.className = "fit-field-wrap";
+    const speciesLabel = document.createElement("span");
+    speciesLabel.className = "line-field-label";
+    speciesLabel.textContent = "Line";
+    const speciesInput = document.createElement("input");
+    speciesInput.type = "text";
+    speciesInput.className = "fit-species-input";
+    speciesInput.setAttribute("list", "speciesList");
+    speciesInput.placeholder = "Species";
+    speciesInput.value = profile.species || "";
+    speciesWrap.append(speciesLabel, speciesInput);
+
+    const restWrap = document.createElement("div");
+    restWrap.className = "fit-field-wrap";
+    const restLabel = document.createElement("span");
+    restLabel.className = "line-field-label";
+    restLabel.textContent = "Rest (Å)";
+    const restInput = document.createElement("input");
+    restInput.type = "number";
+    restInput.className = "fit-rest-input";
+    restInput.step = "0.001";
+    restInput.placeholder = "Wavelength";
+    restInput.value = profile.lineRest || "";
+    restWrap.append(restLabel, restInput);
+
+    lineIdRow.append(speciesWrap, restWrap);
+
+    // --- Measured values dl ---
     const values = document.createElement("dl");
     values.className = "fit-values";
-    appendFitValue(values, "Mean", `${formatNumber(profile.mean)} A`);
-    appendFitValue(values, "FWHM", `${formatNumber(profile.fwhm)} A`);
-    appendFitValue(values, "pEW", `${formatNumber(profile.pEW)} A`);
-    appendFitValue(values, "Range", `${formatNumber(profile.minX)}-${formatNumber(profile.maxX)} A`);
+    appendFitValue(values, "Mean", `${formatNumber(profile.mean)} Å`);
+    appendFitValue(values, "FWHM", `${formatNumber(profile.fwhm)} Å`);
+    appendFitValue(values, "pEW", `${formatNumber(profile.pEW)} Å`);
+    appendFitValue(values, "Range", `${formatNumber(profile.minX)}–${formatNumber(profile.maxX)} Å`);
+
+    // Velocity rows — shown only when rest wavelength is set
+    const meanVelTerm = document.createElement("dt");
+    const meanVelDesc = document.createElement("dd");
+    meanVelTerm.textContent = "Mean vel.";
+    const fwhmVelTerm = document.createElement("dt");
+    const fwhmVelDesc = document.createElement("dd");
+    fwhmVelTerm.textContent = "FWHM vel.";
+
+    function updateVelocityRows() {
+      const rest = Number.parseFloat(restInput.value);
+      if (!Number.isFinite(rest) || rest <= 0) {
+        meanVelTerm.style.display = "none";
+        meanVelDesc.style.display = "none";
+        fwhmVelTerm.style.display = "none";
+        fwhmVelDesc.style.display = "none";
+        return;
+      }
+      // Mean velocity: redshift-corrected velocity from rest wavelength
+      // v = c * (lambda_obs / lambda_rest - 1), where lambda_obs = mean
+      // const observedMean = profile.mean * redshiftFactor();
+      const meanVel = SPEED_OF_LIGHT_KMS * (profile.mean / rest - 1);
+      // FWHM in velocity: delta_lambda / rest * c (non-relativistic width)
+      const fwhmVel = SPEED_OF_LIGHT_KMS * profile.fwhm / rest;
+      meanVelDesc.textContent = `${formatNumber(meanVel)} km/s`;
+      fwhmVelDesc.textContent = `${formatNumber(Math.abs(fwhmVel))} km/s`;
+      meanVelTerm.style.display = "";
+      meanVelDesc.style.display = "";
+      fwhmVelTerm.style.display = "";
+      fwhmVelDesc.style.display = "";
+    }
+
+    values.append(meanVelTerm, meanVelDesc, fwhmVelTerm, fwhmVelDesc);
+    updateVelocityRows();
+
+    // Wire up species input: autocomplete from INBUILT_LINES fills rest field
+    speciesInput.addEventListener("input", () => { profile.species = speciesInput.value; });
+    speciesInput.addEventListener("change", () => {
+      profile.species = speciesInput.value;
+      const found = INBUILT_LINES.find(l => l.name === speciesInput.value);
+      if (found) {
+        profile.lineRest = formatInputValue(found.rest, 4);
+        restInput.value = profile.lineRest;
+        updateVelocityRows();
+      }
+    });
+
+    // Wire up rest wavelength input
+    restInput.addEventListener("input", () => {
+      profile.lineRest = restInput.value;
+      updateVelocityRows();
+    });
 
     const button = document.createElement("button");
     button.className = "remove-btn";
@@ -394,7 +479,7 @@ function renderFittedProfiles() {
       renderAll();
     });
 
-    card.append(title, values, button);
+    card.append(title, lineIdRow, values, button);
     fittedProfilesList.append(card);
   });
 }
@@ -1005,6 +1090,24 @@ function fitGaussianProfile(firstPoint, secondPoint) {
     kind: fit.amplitude >= 0 ? "Emission" : "Absorption"
   };
   profile.pEW = pseudoEquivalentWidth(profile, 240);
+
+  // Auto-match closest line from the line list within 3% of the fitted mean (observed frame)
+  const observedMean = mu * redshiftFactor();
+  const tolerance = observedMean * 0.03;
+  let bestLine = null;
+  let bestDist = Infinity;
+  state.lines.forEach(line => {
+    const obs = numericValue(line.observed);
+    if (!Number.isFinite(obs)) return;
+    const dist = Math.abs(obs - observedMean);
+    if (dist <= tolerance && dist < bestDist) {
+      bestDist = dist;
+      bestLine = line;
+    }
+  });
+  profile.species = bestLine ? bestLine.species : "";
+  profile.lineRest = bestLine ? formatInputValue(numericValue(bestLine.rest), 4) : "";
+
   return profile;
 }
 
