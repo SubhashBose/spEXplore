@@ -1,9 +1,5 @@
 const SPEED_OF_LIGHT_KMS = 299792.458;
 
-// Shared input handler for any free-text decimal field (velocity, wavelength).
-// Calls setValue only when the raw string represents a complete finite number;
-// silently ignores incomplete states like "-", ".", "-.", or "3000." so the
-// user can type naturally without the field resetting under their cursor.
 function onDecimalInput(rawValue, setValue) {
   const raw = rawValue.trim();
   if (raw === "" || raw === "-" || raw === "." || raw === "-.") return;
@@ -11,6 +7,7 @@ function onDecimalInput(rawValue, setValue) {
   const parsed = Number.parseFloat(raw);
   if (Number.isFinite(parsed)) setValue(parsed);
 }
+
 const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#c2410c", "#1d4ed8"];
 
 const INBUILT_LINES = [
@@ -399,11 +396,9 @@ function renderFittedProfiles() {
 
     const header = document.createElement("div");
     header.className = "fit-card-header";
-
     const title = document.createElement("span");
     title.className = "fit-card-title";
     title.textContent = `${profile.kind} profile ${index + 1}`;
-
     const visCheckbox = document.createElement("input");
     visCheckbox.type = "checkbox";
     visCheckbox.className = "fit-vis-checkbox";
@@ -1213,7 +1208,7 @@ function profileSamples(profile, count) {
 
 const SESSION_VERSION = 1;
 
-function saveSession() {
+async function saveSession() {
   // Serialise only the persistent, restorable parts of state.
   // Transient UI interaction state (deleteMode, fitMode, dragZoom etc.) is
   // intentionally excluded — it resets cleanly on load.
@@ -1235,6 +1230,7 @@ function saveSession() {
     })),
     deletedSections: state.deletedSections.map(s => ({ min: s.min, max: s.max })),
     fittedProfiles: state.fittedProfiles.map(p => ({
+      visible: p.visible !== false,
       minX: p.minX,
       maxX: p.maxX,
       amplitude: p.amplitude,
@@ -1257,21 +1253,49 @@ function saveSession() {
   };
 
   const json = JSON.stringify(session);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  // Use spectrum filename as base, or "session" if none loaded
   const base = state.fileName ? state.fileName.replace(/\.[^.]+$/, "") : "session";
-  anchor.href = url;
-  anchor.download = `${base}.spx`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+
+  // Compress with native CompressionStream (gzip) if available, else plain JSON
+  if (typeof CompressionStream !== "undefined") {
+    const stream = new CompressionStream("gzip");
+    const writer = stream.writable.getWriter();
+    writer.write(new TextEncoder().encode(json));
+    writer.close();
+    const compressed = await new Response(stream.readable).arrayBuffer();
+    const blob = new Blob([compressed], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${base}.spx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } else {
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${base}.spx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 }
 
 async function loadSession(file) {
   let session;
   try {
-    const text = await file.text();
+    // Detect gzip magic bytes (1f 8b); fall back to plain text
+    const arrayBuf = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuf);
+    let text;
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b && typeof DecompressionStream !== "undefined") {
+      const stream = new DecompressionStream("gzip");
+      const writer = stream.writable.getWriter();
+      writer.write(bytes);
+      writer.close();
+      text = await new Response(stream.readable).text();
+    } else {
+      text = new TextDecoder().decode(bytes);
+    }
     session = JSON.parse(text);
   } catch {
     fileStatus.textContent = "Session load failed: file is not valid JSON.";
@@ -1316,6 +1340,7 @@ async function loadSession(file) {
     ? session.fittedProfiles
         .filter(p => p && Number.isFinite(p.mean) && p.continuum)
         .map(p => ({
+          visible: p.visible !== false,
           minX: p.minX,
           maxX: p.maxX,
           amplitude: p.amplitude,
