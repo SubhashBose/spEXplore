@@ -8,6 +8,29 @@ function onDecimalInput(rawValue, setValue) {
   if (Number.isFinite(parsed)) setValue(parsed);
 }
 
+// ── Relativistic Doppler conversions ────────────────────────────────────────
+// Shift a rest wavelength by a radial velocity (km/s) using the relativistic
+// Doppler formula: lambda_obs = lambda_rest * sqrt((c+v)/(c-v))
+function dopplerShift(lambdaRest, vKms) {
+  const beta = vKms / SPEED_OF_LIGHT_KMS;
+  return lambdaRest * Math.sqrt((1 + beta) / (1 - beta));
+}
+
+// Recover the radial velocity (km/s) from observed and rest wavelengths using
+// the relativistic inverse: v = c * (lambda_obs^2 - lambda_rest^2) / (lambda_obs^2 + lambda_rest^2)
+function dopplerVelocity(lambdaObs, lambdaRest) {
+  const r2 = (lambdaObs / lambdaRest) ** 2;
+  return SPEED_OF_LIGHT_KMS * (r2 - 1) / (r2 + 1);
+}
+
+// FWHM in velocity: convert the two wavelength edges (mean ± fwhm/2) to
+// velocities relative to the rest wavelength and return the full width.
+function dopplerFwhmVel(lambdaMean, fwhmAng, lambdaRest) {
+  const vBlue = dopplerVelocity(lambdaMean - Math.abs(fwhmAng) / 2, lambdaRest);
+  const vRed  = dopplerVelocity(lambdaMean + Math.abs(fwhmAng) / 2, lambdaRest);
+  return Math.abs(vRed - vBlue);
+}
+
 const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#c2410c", "#1d4ed8"];
 
 const INBUILT_LINES = [
@@ -494,9 +517,8 @@ function renderFittedProfiles() {
       // Mean velocity: redshift-corrected velocity from rest wavelength
       // v = c * (lambda_obs / lambda_rest - 1), where lambda_obs = mean
       // const observedMean = profile.mean * redshiftFactor();
-      const meanVel = SPEED_OF_LIGHT_KMS * (profile.mean / rest - 1);
-      // FWHM in velocity: delta_lambda / rest * c (non-relativistic width)
-      const fwhmVel = SPEED_OF_LIGHT_KMS * profile.fwhm / rest;
+      const meanVel = dopplerVelocity(profile.mean, rest);
+      const fwhmVel = dopplerFwhmVel(profile.mean, profile.fwhm, rest);
       meanVelDesc.textContent = `${formatNumber(meanVel)} km/s`;
       fwhmVelDesc.textContent = `${formatNumber(Math.abs(fwhmVel))} km/s`;
       meanVelTerm.style.display = "";
@@ -759,11 +781,11 @@ function syncLineObserved(line) {
     return;
   }
   if (state.lineDisplayMode === "shifted") {
-    // Shifted λ: rest-frame wavelength shifted only by line velocity (no global redshift)
-    line.observed = formatInputValue(rest * (1 + finiteOrZero(velocity) / SPEED_OF_LIGHT_KMS), 3);
+    // Shifted λ: rest wavelength Doppler-shifted by line velocity only (no global redshift)
+    line.observed = formatInputValue(dopplerShift(rest, finiteOrZero(velocity)), 3);
   } else {
-    // Observed λ: full observed wavelength including global redshift
-    line.observed = formatInputValue(rest * redshiftFactor() * (1 + finiteOrZero(velocity) / SPEED_OF_LIGHT_KMS), 3);
+    // Observed λ: Doppler-shifted then redshifted by (1+z)
+    line.observed = formatInputValue(dopplerShift(rest, finiteOrZero(velocity)) * redshiftFactor(), 3);
   }
 }
 
@@ -775,12 +797,12 @@ function syncLineVelocity(line) {
     return;
   }
   if (state.lineDisplayMode === "shifted") {
-    // Shifted λ mode: velocity = c * (shifted / rest - 1)
-    line.velocity = formatInputValue(SPEED_OF_LIGHT_KMS * (observed / rest - 1), 3);
+    // Shifted λ mode: velocity from Doppler formula (shifted / rest)
+    line.velocity = formatInputValue(dopplerVelocity(observed, rest), 3);
   } else {
-    // Observed λ mode: velocity = c * (observed / (rest * redshiftFactor()) - 1)
+    // Observed λ mode: remove global redshift first, then get velocity
     if (redshiftFactor() === 0) { line.velocity = ""; return; }
-    line.velocity = formatInputValue(SPEED_OF_LIGHT_KMS * (observed / (rest * redshiftFactor()) - 1), 3);
+    line.velocity = formatInputValue(dopplerVelocity(observed / redshiftFactor(), rest), 3);
   }
 }
 
@@ -790,14 +812,14 @@ function observedWavelength(line) {
   const rest = numericValue(line.rest);
   if (!Number.isFinite(rest)) return Number.NaN;
   const v = finiteOrZero(numericValue(line.velocity));
-  return rest * redshiftFactor() * (1 + v / SPEED_OF_LIGHT_KMS);
+  return dopplerShift(rest, v) * redshiftFactor();
 }
 
 function restLineWavelength(line) {
   const rest = numericValue(line.rest);
   if (!Number.isFinite(rest)) return Number.NaN;
   const v = finiteOrZero(numericValue(line.velocity));
-  return rest * (1 + v / SPEED_OF_LIGHT_KMS);
+  return dopplerShift(rest, v);
 }
 
 function drawSpectrum() {
@@ -1254,13 +1276,13 @@ function profileSamples(profile, count) {
 function profileMeanVel(profile) {
   const rest = Number.parseFloat(profile.lineRest);
   if (!Number.isFinite(rest) || rest <= 0) return null;
-  return SPEED_OF_LIGHT_KMS * (profile.mean / rest - 1);
+  return dopplerVelocity(profile.mean, rest);
 }
 
 function profileFwhmVel(profile) {
   const rest = Number.parseFloat(profile.lineRest);
   if (!Number.isFinite(rest) || rest <= 0) return null;
-  return SPEED_OF_LIGHT_KMS * Math.abs(profile.fwhm) / rest;
+  return dopplerFwhmVel(profile.mean, profile.fwhm, rest);
 }
 
 // Returns array of column-group objects used by both render and download
