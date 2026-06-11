@@ -639,3 +639,105 @@ aside.controls button {
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+/* ── Section header actions group ─────────────────────────────────────── */
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.average-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.average-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+/* ── Tabulate table ────────────────────────────────────────────────────── */
+
+/* Override the global display:block and hidden-thead rules for the tabulate table */
+.tabulate-table {
+  display: table;
+  width: max-content;
+  max-width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.tabulate-table thead {
+  display: table-header-group;
+  position: static;
+  inline-size: auto;
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+.tabulate-table tbody {
+  display: table-row-group;
+}
+
+.tabulate-table tr {
+  display: table-row;
+}
+
+.tabulate-table th,
+.tabulate-table td {
+  display: table-cell;
+}
+
+#tabulateTableWrap {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.tab-group-header {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 7px 12px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.tab-field-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tab-error-header {
+  color: var(--accent);
+}
+
+.tab-value {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.tab-error-value {
+  color: var(--muted);
+}

@@ -66,7 +66,9 @@ const state = {
   dragCurrent: null,
   plotArea: null,
   currentDomain: null,
-  currentRange: null
+  currentRange: null,
+  tabulateActive: false,
+  averageSameLines: false
 };
 
 const fileInput = document.querySelector("#fileInput");
@@ -94,6 +96,12 @@ const deleteHint = document.querySelector("#deleteHint");
 const fitHint = document.querySelector("#fitHint");
 const speciesList = document.querySelector("#speciesList");
 const ctx = canvas.getContext("2d");
+const tabulateButton = document.querySelector("#tabulateButton");
+const averageSameLinesCheckbox = document.querySelector("#averageSameLinesCheckbox");
+const tabulateSection = document.querySelector("#tabulateSection");
+const tabulateTableWrap = document.querySelector("#tabulateTableWrap");
+const downloadCsvButton = document.querySelector("#downloadCsvButton");
+const downloadJsonButton = document.querySelector("#downloadJsonButton");
 const saveSessionButton = document.querySelector("#saveSessionButton");
 const loadSessionButton = document.querySelector("#loadSessionButton");
 const sessionFileInput = document.querySelector("#sessionFileInput");
@@ -117,6 +125,16 @@ redshiftInput.addEventListener("input", () => {
 });
 
 saveSessionButton.addEventListener("click", saveSession);
+tabulateButton.addEventListener("click", () => {
+  state.tabulateActive = true;
+  renderTabulate();
+});
+averageSameLinesCheckbox.addEventListener("change", () => {
+  state.averageSameLines = averageSameLinesCheckbox.checked;
+  if (state.tabulateActive) renderTabulate();
+});
+downloadCsvButton.addEventListener("click", downloadTabulateCsv);
+downloadJsonButton.addEventListener("click", downloadTabulateJson);
 loadSessionButton.addEventListener("click", () => sessionFileInput.click());
 sessionFileInput.addEventListener("change", event => {
   const file = event.target.files[0];
@@ -1204,6 +1222,237 @@ function profileSamples(profile, count) {
 }
 
 
+// ─── Tabulate ───────────────────────────────────────────────────────────────
+
+// Compute velocity from mean and rest wavelength (same formula as fit card)
+function profileMeanVel(profile) {
+  const rest = Number.parseFloat(profile.lineRest);
+  if (!Number.isFinite(rest) || rest <= 0) return null;
+  return SPEED_OF_LIGHT_KMS * (profile.mean / rest - 1);
+}
+
+function profileFwhmVel(profile) {
+  const rest = Number.parseFloat(profile.lineRest);
+  if (!Number.isFinite(rest) || rest <= 0) return null;
+  return SPEED_OF_LIGHT_KMS * Math.abs(profile.fwhm) / rest;
+}
+
+// Returns array of column-group objects used by both render and download
+function tabulateData() {
+  const average = state.averageSameLines;
+  const profiles = state.fittedProfiles.filter(p => p.visible !== false);
+
+  if (!average) {
+    // One column group per fit card
+    return profiles.map((p, i) => {
+      const hasVel = Number.isFinite(Number.parseFloat(p.lineRest)) && Number.parseFloat(p.lineRest) > 0;
+      const label = (p.species && p.species.trim()) ? p.species.trim()
+                  : `${p.kind} profile ${i + 1}`;
+      const fields = [
+        { key: "Mean (Å)",    value: p.mean },
+        { key: "FWHM (Å)",    value: p.fwhm },
+        { key: "pEW (Å)",     value: p.pEW },
+      ];
+      if (hasVel) {
+        fields.push({ key: "Mean vel. (km/s)",  value: profileMeanVel(p) });
+        fields.push({ key: "FWHM vel. (km/s)",  value: profileFwhmVel(p) });
+      }
+      return { label, fields, count: 1 };
+    });
+  }
+
+  // Average mode: group by lineRest value (exact string match, non-empty)
+  const grouped = new Map();
+  const ungrouped = [];
+  profiles.forEach((p, i) => {
+    const rest = (p.lineRest || "").trim();
+    if (!rest) { ungrouped.push({ p, i }); return; }
+    if (!grouped.has(rest)) grouped.set(rest, []);
+    grouped.get(rest).push({ p, i });
+  });
+
+  const groups = [];
+
+  grouped.forEach((items, rest) => {
+    const first = items[0].p;
+    const hasVel = Number.isFinite(Number.parseFloat(rest)) && Number.parseFloat(rest) > 0;
+    const speciesLabel = (first.species && first.species.trim()) ? first.species.trim() : rest;
+    const vals = key => items.map(({ p }) => {
+      if (key === "mean") return p.mean;
+      if (key === "fwhm") return p.fwhm;
+      if (key === "pEW") return p.pEW;
+      if (key === "meanVel") return profileMeanVel(p);
+      if (key === "fwhmVel") return profileFwhmVel(p);
+    }).filter(v => v != null && Number.isFinite(v));
+
+    const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const std  = arr => {
+      if (arr.length <= 1) return 0;
+      const m = mean(arr);
+      return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
+    };
+
+    const fields = [
+      { key: "Mean (Å)",          value: mean(vals("mean")),    error: std(vals("mean")) },
+      { key: "FWHM (Å)",          value: mean(vals("fwhm")),    error: std(vals("fwhm")) },
+      { key: "pEW (Å)",           value: mean(vals("pEW")),     error: std(vals("pEW")) },
+    ];
+    if (hasVel) {
+      fields.push({ key: "Mean vel. (km/s)",  value: mean(vals("meanVel")), error: std(vals("meanVel")) });
+      fields.push({ key: "FWHM vel. (km/s)",  value: mean(vals("fwhmVel")), error: std(vals("fwhmVel")) });
+    }
+    groups.push({ label: speciesLabel, fields, count: items.length });
+  });
+
+  // Ungrouped (no rest wavelength)
+  ungrouped.forEach(({ p, i }) => {
+    const label = (p.species && p.species.trim()) ? p.species.trim()
+                : `${p.kind} profile ${i + 1}`;
+    const fields = [
+      { key: "Mean (Å)",   value: p.mean,  error: 0 },
+      { key: "FWHM (Å)",   value: p.fwhm,  error: 0 },
+      { key: "pEW (Å)",    value: p.pEW,   error: 0 },
+    ];
+    groups.push({ label, fields, count: 1 });
+  });
+
+  return groups;
+}
+
+function renderTabulate() {
+  const data = tabulateData();
+  tabulateSection.hidden = false;
+  const average = state.averageSameLines;
+
+  tabulateTableWrap.replaceChildren();
+
+  if (data.length === 0) {
+    const msg = document.createElement("p");
+    msg.style.cssText = "color:var(--muted);font-size:13px;margin:0";
+    msg.textContent = "No fitted profiles to tabulate.";
+    tabulateTableWrap.append(msg);
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "tabulate-table";
+
+  // Row 1: group header cells
+  const headRow1 = document.createElement("tr");
+  // Row 2: field sub-headers
+  const headRow2 = document.createElement("tr");
+
+  data.forEach(group => {
+    const colCount = average ? group.fields.length * 2 : group.fields.length;
+    const th = document.createElement("th");
+    th.colSpan = colCount;
+    th.className = "tab-group-header";
+    th.textContent = group.label;
+    headRow1.append(th);
+
+    group.fields.forEach(f => {
+      const th2 = document.createElement("th");
+      th2.className = "tab-field-header";
+      th2.textContent = f.key;
+      headRow2.append(th2);
+      if (average) {
+        const thErr = document.createElement("th");
+        thErr.className = "tab-field-header tab-error-header";
+        thErr.textContent = "Error";
+        headRow2.append(thErr);
+      }
+    });
+  });
+
+  const thead = document.createElement("thead");
+  thead.append(headRow1, headRow2);
+  table.append(thead);
+
+  // Single data row
+  const tbody = document.createElement("tbody");
+  const tr = document.createElement("tr");
+  data.forEach(group => {
+    group.fields.forEach(f => {
+      const td = document.createElement("td");
+      td.className = "tab-value";
+      td.textContent = f.value != null ? formatNumber(f.value) : "–";
+      tr.append(td);
+      if (average) {
+        const tdErr = document.createElement("td");
+        tdErr.className = "tab-value tab-error-value";
+        tdErr.textContent = f.error != null ? formatNumber(f.error) : "–";
+        tr.append(tdErr);
+      }
+    });
+  });
+  tbody.append(tr);
+  table.append(tbody);
+  tabulateTableWrap.append(table);
+}
+
+function downloadTabulateCsv() {
+  const data = tabulateData();
+  if (!data.length) return;
+  const average = state.averageSameLines;
+  const rows = [];
+
+  // Header row 1: group labels
+  const groupRow = data.flatMap(g => {
+    const cols = average ? g.fields.length * 2 : g.fields.length;
+    return [g.label, ...Array(cols - 1).fill("")];
+  });
+  rows.push(groupRow.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","));
+
+  // Header row 2: field names
+  const fieldRow = data.flatMap(g =>
+    average ? g.fields.flatMap(f => [f.key, "Error"]) : g.fields.map(f => f.key)
+  );
+  rows.push(fieldRow.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","));
+
+  // Data row
+  const dataRow = data.flatMap(g =>
+    average
+      ? g.fields.flatMap(f => [
+          f.value != null ? formatNumber(f.value) : "",
+          f.error != null ? formatNumber(f.error) : ""
+        ])
+      : g.fields.map(f => f.value != null ? formatNumber(f.value) : "")
+  );
+  rows.push(dataRow.join(","));
+
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const base = state.fileName ? state.fileName.replace(/\.[^.]+$/, "") : "tabulate";
+  a.download = `${base}_tabulate.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadTabulateJson() {
+  const data = tabulateData();
+  if (!data.length) return;
+  const average = state.averageSameLines;
+  const out = data.map(g => {
+    const obj = { label: g.label };
+    g.fields.forEach(f => {
+      obj[f.key] = f.value != null ? f.value : null;
+      if (average) obj[`${f.key} Error`] = f.error != null ? f.error : null;
+    });
+    return obj;
+  });
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const base = state.fileName ? state.fileName.replace(/\.[^.]+$/, "") : "tabulate";
+  a.download = `${base}_tabulate.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
 // ─── Session save / load ────────────────────────────────────────────────────
 
 const SESSION_VERSION = 1;
@@ -1219,6 +1468,8 @@ async function saveSession() {
     binSize: state.binSize,
     commonVelocity: state.commonVelocity,
     zoom: state.zoom,
+    tabulateActive: state.tabulateActive,
+    averageSameLines: state.averageSameLines,
     spectrum: state.spectrum,            // [{wavelength, flux}, ...]
     lines: state.lines.map(l => ({      // shallow copy, all fields are primitives
       visible: l.visible,
@@ -1317,6 +1568,9 @@ async function loadSession(file) {
     ? Math.round(session.binSize) : 1;
   state.commonVelocity = Number.isFinite(session.commonVelocity) ? session.commonVelocity : 0;
   state.zoom = session.zoom && Number.isFinite(session.zoom.x?.min) ? session.zoom : null;
+  state.tabulateActive = session.tabulateActive === true;
+  state.averageSameLines = session.averageSameLines === true;
+  averageSameLinesCheckbox.checked = state.averageSameLines;
 
   // ── Restore line list ─────────────────────────────────────────────────────
   state.lines = Array.isArray(session.lines)
@@ -1392,6 +1646,7 @@ async function loadSession(file) {
   }
 
   renderAll();
+  if (state.tabulateActive) renderTabulate();
 }
 
 function pseudoEquivalentWidth(profile, count) {

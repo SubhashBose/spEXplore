@@ -96,10 +96,27 @@
       <section class="line-table-section" aria-label="Fitted line profiles">
         <div class="section-header">
           <h2>Fitted line profiles</h2>
+          <div class="section-header-actions">
+            <label class="average-label">
+              <input id="averageSameLinesCheckbox" type="checkbox">
+              Average same lines
+            </label>
+            <button id="tabulateButton" type="button">Tabulate</button>
+          </div>
         </div>
         <div class="table-wrap">
           <div id="fittedProfilesList" class="fit-profiles-grid"></div>
         </div>
+      </section>
+      <section class="line-table-section" id="tabulateSection" aria-label="Tabulated results" hidden>
+        <div class="section-header">
+          <h2>Tabulated Results</h2>
+          <div class="section-header-actions">
+            <button id="downloadCsvButton" type="button" class="session-button">Download CSV</button>
+            <button id="downloadJsonButton" type="button" class="session-button">Download JSON</button>
+          </div>
+        </div>
+        <div class="table-wrap" id="tabulateTableWrap"></div>
       </section>
     </main>
 
