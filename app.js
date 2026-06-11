@@ -577,14 +577,14 @@ function renderLineTable() {
       syncLineObserved(line);
       refreshCoupledInputs();
     });
-    velocityInput = velocityCell.querySelector("input[type='number']");
+    velocityInput = velocityCell.querySelector("input[type='text']");
 
     const observedCell = numericSliderCell("Observed A", line.observed, "0.001", () => numericValue(line.observed), value => {
       line.observed = formatInputValue(value, 3);
       syncLineVelocity(line);
       refreshCoupledInputs();
     });
-    observedInput = observedCell.querySelector("input[type='number']");
+    observedInput = observedCell.querySelector("input[type='text']");
 
     row.append(
       visibilityCell("Show", line, value => {
