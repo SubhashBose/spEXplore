@@ -66,7 +66,13 @@
       <section class="line-table-section" aria-label="Spectral line table">
         <div class="section-header">
           <h2>Line List</h2>
-          <button id="addLineButton" type="button">Add Line</button>
+          <div class="section-header-actions">
+            <select id="lineDisplaySelect" class="line-display-select">
+              <option value="shifted">Display Shifted λ</option>
+              <option value="observed">Display Observed λ</option>
+            </select>
+            <button id="addLineButton" type="button">Add Line</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
@@ -74,9 +80,9 @@
               <tr>
                 <th>Show</th>
                 <th>Species</th>
-                <th>Rest wavelength (A)</th>
+                <th>Rest wavelength (Å)</th>
                 <th>Velocity (km/s)</th>
-                <th>Observed wavelength (A)</th>
+                <th>Shifted/Observed wavelength (Å)</th>
                 <th>Color</th>
                 <th></th>
               </tr>

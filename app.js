@@ -68,7 +68,8 @@ const state = {
   currentDomain: null,
   currentRange: null,
   tabulateActive: false,
-  averageSameLines: false
+  averageSameLines: false,
+  lineDisplayMode: "shifted"
 };
 
 const fileInput = document.querySelector("#fileInput");
@@ -96,6 +97,7 @@ const deleteHint = document.querySelector("#deleteHint");
 const fitHint = document.querySelector("#fitHint");
 const speciesList = document.querySelector("#speciesList");
 const ctx = canvas.getContext("2d");
+const lineDisplaySelect = document.querySelector("#lineDisplaySelect");
 const tabulateButton = document.querySelector("#tabulateButton");
 const averageSameLinesCheckbox = document.querySelector("#averageSameLinesCheckbox");
 const tabulateSection = document.querySelector("#tabulateSection");
@@ -124,6 +126,10 @@ redshiftInput.addEventListener("input", () => {
   renderAll();
 });
 
+lineDisplaySelect.addEventListener("change", () => {
+  state.lineDisplayMode = lineDisplaySelect.value;
+  renderAll();
+});
 saveSessionButton.addEventListener("click", saveSession);
 tabulateButton.addEventListener("click", () => {
   state.tabulateActive = true;
@@ -384,7 +390,7 @@ function renderDeletedSections() {
     label.className = "range-label";
     const restMin = section.min / factor;
     const restMax = section.max / factor;
-    label.textContent = `${restMin.toFixed(2)} - ${restMax.toFixed(2)} A (Rest)`;
+    label.textContent = `${restMin.toFixed(2)}–${restMax.toFixed(2)} Å (Rest)`;
     const btn = document.createElement("button");
     btn.className = "remove-btn";
     btn.textContent = "Undelete";
@@ -579,7 +585,8 @@ function renderLineTable() {
     });
     velocityInput = velocityCell.querySelector("input[type='text']");
 
-    const observedCell = numericSliderCell("Observed A", line.observed, "0.001", () => numericValue(line.observed), value => {
+    const obsLabel = state.lineDisplayMode === "shifted" ? "Shifted Å" : "Observed Å";
+    const observedCell = numericSliderCell(obsLabel, line.observed, "0.001", () => numericValue(line.observed), value => {
       line.observed = formatInputValue(value, 3);
       syncLineVelocity(line);
       refreshCoupledInputs();
@@ -599,7 +606,7 @@ function renderLineTable() {
         syncLineObserved(line);
         renderAll();
       }),
-      numericSliderCell("Rest A", line.rest, "0.001", () => numericValue(line.rest), value => {
+      numericSliderCell("Rest Å", line.rest, "0.001", () => numericValue(line.rest), value => {
         line.rest = formatInputValue(value, 3);
         syncLineObserved(line);
         refreshCoupledInputs();
@@ -751,27 +758,46 @@ function syncLineObserved(line) {
     line.observed = "";
     return;
   }
-  line.observed = formatInputValue(rest * redshiftFactor() * (1 + finiteOrZero(velocity) / SPEED_OF_LIGHT_KMS), 3);
+  if (state.lineDisplayMode === "shifted") {
+    // Shifted λ: rest-frame wavelength shifted only by line velocity (no global redshift)
+    line.observed = formatInputValue(rest * (1 + finiteOrZero(velocity) / SPEED_OF_LIGHT_KMS), 3);
+  } else {
+    // Observed λ: full observed wavelength including global redshift
+    line.observed = formatInputValue(rest * redshiftFactor() * (1 + finiteOrZero(velocity) / SPEED_OF_LIGHT_KMS), 3);
+  }
 }
 
 function syncLineVelocity(line) {
   const rest = numericValue(line.rest);
   const observed = numericValue(line.observed);
-  if (!Number.isFinite(rest) || !Number.isFinite(observed) || rest === 0 || redshiftFactor() === 0) {
+  if (!Number.isFinite(rest) || !Number.isFinite(observed) || rest === 0) {
     line.velocity = "";
     return;
   }
-  line.velocity = formatInputValue(SPEED_OF_LIGHT_KMS * (observed / (rest * redshiftFactor()) - 1), 3);
+  if (state.lineDisplayMode === "shifted") {
+    // Shifted λ mode: velocity = c * (shifted / rest - 1)
+    line.velocity = formatInputValue(SPEED_OF_LIGHT_KMS * (observed / rest - 1), 3);
+  } else {
+    // Observed λ mode: velocity = c * (observed / (rest * redshiftFactor()) - 1)
+    if (redshiftFactor() === 0) { line.velocity = ""; return; }
+    line.velocity = formatInputValue(SPEED_OF_LIGHT_KMS * (observed / (rest * redshiftFactor()) - 1), 3);
+  }
 }
 
 function observedWavelength(line) {
-  const observed = numericValue(line.observed);
-  return Number.isFinite(observed) ? observed : Number.NaN;
+  // Always the true observed wavelength (rest * redshiftFactor * (1 + v/c)),
+  // regardless of which display mode is active for the line list card.
+  const rest = numericValue(line.rest);
+  if (!Number.isFinite(rest)) return Number.NaN;
+  const v = finiteOrZero(numericValue(line.velocity));
+  return rest * redshiftFactor() * (1 + v / SPEED_OF_LIGHT_KMS);
 }
 
 function restLineWavelength(line) {
-  const observed = observedWavelength(line);
-  return Number.isFinite(observed) ? observed / redshiftFactor() : Number.NaN;
+  const rest = numericValue(line.rest);
+  if (!Number.isFinite(rest)) return Number.NaN;
+  const v = finiteOrZero(numericValue(line.velocity));
+  return rest * (1 + v / SPEED_OF_LIGHT_KMS);
 }
 
 function drawSpectrum() {
@@ -916,8 +942,8 @@ function drawAxes(width, height, plot, domain, range) {
   ctx.textAlign = "center";
   ctx.font = "13px Inter, system-ui, sans-serif";
   ctx.textBaseline = "bottom";
-  ctx.fillText("Observed wavelength (A)", x0 + plotWidth / 2, 18);
-  ctx.fillText("Rest wavelength (A)", x0 + plotWidth / 2, height - 8);
+  ctx.fillText("Observed wavelength (Å)", x0 + plotWidth / 2, 18);
+  ctx.fillText("Rest wavelength (Å)", x0 + plotWidth / 2, height - 8);
 
   ctx.save();
   ctx.translate(16, plot.top + plotHeight / 2);
@@ -1470,6 +1496,7 @@ async function saveSession() {
     zoom: state.zoom,
     tabulateActive: state.tabulateActive,
     averageSameLines: state.averageSameLines,
+    lineDisplayMode: state.lineDisplayMode || "shifted",
     spectrum: state.spectrum,            // [{wavelength, flux}, ...]
     lines: state.lines.map(l => ({      // shallow copy, all fields are primitives
       visible: l.visible,
@@ -1570,7 +1597,9 @@ async function loadSession(file) {
   state.zoom = session.zoom && Number.isFinite(session.zoom.x?.min) ? session.zoom : null;
   state.tabulateActive = session.tabulateActive === true;
   state.averageSameLines = session.averageSameLines === true;
+  state.lineDisplayMode = session.lineDisplayMode === "observed" ? "observed" : "shifted";
   averageSameLinesCheckbox.checked = state.averageSameLines;
+  lineDisplaySelect.value = state.lineDisplayMode;
 
   // ── Restore line list ─────────────────────────────────────────────────────
   state.lines = Array.isArray(session.lines)
@@ -1691,7 +1720,7 @@ function handleMouseMove(event) {
   const restX = pxToValue(point.x, plot.left, width - plot.right, state.currentDomain.min, state.currentDomain.max);
   const flux = pxToValue(point.y, height - plot.bottom, plot.top, state.currentRange.min, state.currentRange.max);
   const observedX = restX * redshiftFactor();
-  mouseReadout.textContent = `Rest x: ${formatNumber(restX)} A | Obs x: ${formatNumber(observedX)} A | Flux: ${formatNumber(flux)}`;
+  mouseReadout.textContent = `Rest x: ${formatNumber(restX)} Å | Obs x: ${formatNumber(observedX)} Å | Flux: ${formatNumber(flux)}`;
 }
 
 function finishDragZoom() {

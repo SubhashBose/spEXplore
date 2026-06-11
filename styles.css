@@ -741,3 +741,22 @@ aside.controls button {
 .tab-error-value {
   color: var(--muted);
 }
+
+/* ── Line display mode select ──────────────────────────────────────────── */
+
+.line-display-select {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.line-display-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
