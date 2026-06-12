@@ -79,7 +79,7 @@
             <thead>
               <tr>
                 <th>Show</th>
-                <th>Species</th>
+                <th>Line</th>
                 <th>Rest wavelength (Å)</th>
                 <th>Velocity (km/s)</th>
                 <th>Shifted/Observed wavelength (Å)</th>
@@ -103,10 +103,6 @@
         <div class="section-header">
           <h2>Fitted line profiles</h2>
           <div class="section-header-actions">
-            <label class="average-label">
-              <input id="averageSameLinesCheckbox" type="checkbox">
-              Average same lines
-            </label>
             <button id="tabulateButton" type="button">Tabulate</button>
           </div>
         </div>
@@ -117,7 +113,34 @@
       <section class="line-table-section" id="tabulateSection" aria-label="Tabulated results" hidden>
         <div class="section-header">
           <h2>Tabulated Results</h2>
-          <div class="section-header-actions">
+          <div class="section-header-actions" style="position:relative">
+            <label class="average-label">
+              <input id="averageSameLinesCheckbox" type="checkbox">
+              Average same lines
+            </label>
+            <button id="selectColumnsButton" type="button" class="session-button">Select Columns</button>
+            <div id="columnPopup" class="column-popup" hidden>
+              <div class="column-popup-title">Columns</div>
+              <label class="column-option">
+                <input type="checkbox" id="colMean" checked> Mean (Å)
+              </label>
+              <label class="column-option">
+                <input type="checkbox" id="colFwhm" checked> FWHM (Å)
+              </label>
+              <label class="column-option">
+                <input type="checkbox" id="colPew" checked> pEW (Å)
+              </label>
+              <label class="column-option">
+                <input type="checkbox" id="colMeanVel" checked> Mean vel. (km/s)
+              </label>
+              <label class="column-option">
+                <input type="checkbox" id="colFwhmVel" checked> FWHM vel. (km/s)
+              </label>
+              <div class="column-popup-divider"></div>
+              <label class="column-option column-option-errors">
+                <input type="checkbox" id="colShowErrors" checked> Show errors
+              </label>
+            </div>
             <button id="downloadCsvButton" type="button" class="session-button">Download CSV</button>
             <button id="downloadJsonButton" type="button" class="session-button">Download JSON</button>
           </div>

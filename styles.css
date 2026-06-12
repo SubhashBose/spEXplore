@@ -108,7 +108,7 @@ h2 {
 
 .fit-profiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -759,4 +759,64 @@ aside.controls button {
 .line-display-select:focus {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ── Column selector popup ──────────────────────────────────────────────── */
+
+.column-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 -4px 16px rgba(28, 36, 34, 0.13);
+  padding: 10px 0 8px;
+}
+
+.column-popup-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 14px 6px;
+}
+
+.column-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: unset;
+  border: none;
+  background: none;
+}
+
+.column-option:hover {
+  background: var(--surface-2);
+}
+
+.column-option input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.column-popup-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.column-option-errors {
+  color: var(--accent);
+  font-weight: 600;
 }

@@ -53,17 +53,40 @@ const INBUILT_LINES = [
   { name: "H-delta", rest: 4101.74 },
   { name: "H-gamma", rest: 4340.47 },
   { name: "H-beta", rest: 4861.33 },
+  { name: "FeII 4924", rest: 4923.93 },
   { name: "[OIII] 4959", rest: 4958.91 },
   { name: "[OIII] 5007", rest: 5006.84 },
+  { name: "FeII 5018", rest: 5018.44 },
+  { name: "FeII 5169", rest: 5169.03 },
+  { name: "[FeII] 5528", rest: 5528 },
+  { name: "[OI] 5577", rest: 5577 },
   { name: "HeI 5876", rest: 5875.62 },
-  { name: "[OI] 6300", rest: 6300.30 },
+  { name: "[CoII] 5888", rest: 5888 },
+  { name: "NaI 5893 D1", rest: 5889.95 },
+  { name: "NaI 5893 D2", rest: 5895.92 },
+  { name: "SiII 5972", rest: 5972 },
+  { name: "[OI] doub. 6300-A", rest: 6300 },
+  { name: "SiII 6355", rest: 6355 },
+  { name: "[OI] doub. 6300-B", rest: 6364 },
   { name: "H-alpha", rest: 6562.82 },
   { name: "[NII] 6584", rest: 6583.45 },
   { name: "[SII] 6716", rest: 6716.44 },
   { name: "[SII] 6731", rest: 6730.82 },
-  { name: "FeII 4924", rest: 4924 },
-  { name: "FeII 5018", rest: 5018 },
-  { name: "FeII 5169", rest: 5169 }
+  { name: "telluric O2 B-band 6887", rest: 6887 },
+  { name: "[FeII] doub. 7155", rest: 7155 },
+  { name: "Telluric H20 7165", rest: 7165 },
+  { name: "[FeII] doub. 7172", rest: 7172 },
+  { name: "[CaII] doub. 7234-A", rest: 7231 },
+  { name: "[CaII] doub. 7234-B", rest: 7234 },
+  { name: "[CaII] doub. 7300-A", rest: 7291 },
+  { name: "[CaII] doub. 7300-B", rest: 7324 },
+  { name: "Telluric O2 A-band 7620", rest: 7620 },
+  { name: "OI 7774", rest: 7774 },
+  { name: "OI 8446", rest: 8446 },
+  { name: "CaII 8498", rest: 8498 },
+  { name: "CaII 8542", rest: 8542 },
+  { name: "CaII 8662", rest: 8662 },
+  { name: "[FeII] 16433", rest: 16433 }
 ];
 
 const state = {
@@ -92,7 +115,15 @@ const state = {
   currentRange: null,
   tabulateActive: false,
   averageSameLines: false,
-  lineDisplayMode: "shifted"
+  lineDisplayMode: "shifted",
+  columnConfig: {
+    "Mean (Å)": true,
+    "FWHM (Å)": true,
+    "pEW (Å)": true,
+    "Mean vel. (km/s)": true,
+    "FWHM vel. (km/s)": true,
+    showErrors: true
+  }
 };
 
 const fileInput = document.querySelector("#fileInput");
@@ -123,6 +154,16 @@ const ctx = canvas.getContext("2d");
 const lineDisplaySelect = document.querySelector("#lineDisplaySelect");
 const tabulateButton = document.querySelector("#tabulateButton");
 const averageSameLinesCheckbox = document.querySelector("#averageSameLinesCheckbox");
+const selectColumnsButton = document.querySelector("#selectColumnsButton");
+const columnPopup = document.querySelector("#columnPopup");
+const colCheckboxes = {
+  "Mean (Å)":         document.querySelector("#colMean"),
+  "FWHM (Å)":         document.querySelector("#colFwhm"),
+  "pEW (Å)":          document.querySelector("#colPew"),
+  "Mean vel. (km/s)": document.querySelector("#colMeanVel"),
+  "FWHM vel. (km/s)": document.querySelector("#colFwhmVel"),
+};
+const colShowErrors = document.querySelector("#colShowErrors");
 const tabulateSection = document.querySelector("#tabulateSection");
 const tabulateTableWrap = document.querySelector("#tabulateTableWrap");
 const downloadCsvButton = document.querySelector("#downloadCsvButton");
@@ -160,6 +201,29 @@ tabulateButton.addEventListener("click", () => {
 });
 averageSameLinesCheckbox.addEventListener("change", () => {
   state.averageSameLines = averageSameLinesCheckbox.checked;
+  if (state.tabulateActive) renderTabulate();
+});
+
+// Toggle column popup
+selectColumnsButton.addEventListener("click", e => {
+  e.stopPropagation();
+  columnPopup.hidden = !columnPopup.hidden;
+});
+// Close popup when clicking outside
+document.addEventListener("click", e => {
+  if (!columnPopup.hidden && !columnPopup.contains(e.target) && e.target !== selectColumnsButton) {
+    columnPopup.hidden = true;
+  }
+});
+// Column checkboxes
+Object.entries(colCheckboxes).forEach(([key, cb]) => {
+  cb.addEventListener("change", () => {
+    state.columnConfig[key] = cb.checked;
+    if (state.tabulateActive) renderTabulate();
+  });
+});
+colShowErrors.addEventListener("change", () => {
+  state.columnConfig.showErrors = colShowErrors.checked;
   if (state.tabulateActive) renderTabulate();
 });
 downloadCsvButton.addEventListener("click", downloadTabulateCsv);
@@ -470,7 +534,7 @@ function renderFittedProfiles() {
     speciesInput.type = "text";
     speciesInput.className = "fit-species-input";
     speciesInput.setAttribute("list", "speciesList");
-    speciesInput.placeholder = "Species";
+    speciesInput.placeholder = "Line name";
     speciesInput.value = profile.species || "";
     speciesWrap.append(speciesLabel, speciesInput);
 
@@ -492,9 +556,10 @@ function renderFittedProfiles() {
     // --- Measured values dl ---
     const values = document.createElement("dl");
     values.className = "fit-values";
-    appendFitValue(values, "Mean", `${formatNumber(profile.mean)} Å`);
-    appendFitValue(values, "FWHM", `${formatNumber(profile.fwhm)} Å`);
-    appendFitValue(values, "pEW", `${formatNumber(profile.pEW)} Å`);
+    const e = profile.errors || {};
+    appendFitValue(values, "Mean", fitValueWithError(profile.mean, e.mean, "Å"));
+    appendFitValue(values, "FWHM", fitValueWithError(profile.fwhm, e.fwhm, "Å"));
+    appendFitValue(values, "pEW",  fitValueWithError(profile.pEW,  e.pEW,  "Å"));
     appendFitValue(values, "Range", `${formatNumber(profile.minX)}–${formatNumber(profile.maxX)} Å`);
 
     // Velocity rows — shown only when rest wavelength is set
@@ -519,8 +584,10 @@ function renderFittedProfiles() {
       // const observedMean = profile.mean * redshiftFactor();
       const meanVel = dopplerVelocity(profile.mean, rest);
       const fwhmVel = dopplerFwhmVel(profile.mean, profile.fwhm, rest);
-      meanVelDesc.textContent = `${formatNumber(meanVel)} km/s`;
-      fwhmVelDesc.textContent = `${formatNumber(Math.abs(fwhmVel))} km/s`;
+      const errMeanVel  = profileMeanVelError(profile, rest);
+      const errFwhmVel  = profileFwhmVelError(profile, rest);
+      meanVelDesc.textContent = fitValueWithError(meanVel, errMeanVel, "km/s");
+      fwhmVelDesc.textContent = fitValueWithError(Math.abs(fwhmVel), errFwhmVel, "km/s");
       meanVelTerm.style.display = "";
       meanVelDesc.style.display = "";
       fwhmVelTerm.style.display = "";
@@ -620,7 +687,7 @@ function renderLineTable() {
         line.visible = value;
         drawSpectrum();
       }),
-      textCell("Species", line.species, value => {
+      textCell("Line", line.species, value => {
         line.species = value;
         drawSpectrum();
       }, (rest) => {
@@ -1122,24 +1189,18 @@ function drawFittedProfiles(width, height, plot, domain, range) {
   ctx.restore();
 }
 
-function fitGaussianProfile(firstPoint, secondPoint) {
-  const minX = Math.min(firstPoint.restX, secondPoint.restX);
-  const maxX = Math.max(firstPoint.restX, secondPoint.restX);
-  const span = maxX - minX;
-  if (!Number.isFinite(span) || span <= 0) return null;
-
-  const continuum = continuumFromPoints(firstPoint, secondPoint);
-  const samples = currentSpectrumPoints().filter(point => point.restX >= minX && point.restX <= maxX);
-  if (samples.length < 5) return null;
-
-  const residuals = samples.map(point => ({
-    x: point.restX,
-    residual: point.flux - lineAt(continuum, point.restX)
-  }));
-  const strongest = residuals.reduce((best, point) => Math.abs(point.residual) > Math.abs(best.residual) ? point : best, residuals[0]);
-
+// ── Core Gaussian fitter — call this directly or wrap for bootstrap ────────
+// residuals: [{x, residual}], returns {amplitude, mean, sigma, fwhm, sse} or null
+function fitGaussian(residuals, minX, maxX, span) {
+  if (residuals.length < 5) return null;
   const minSigma = Math.max(span / 250, 1e-9);
   const maxSigma = Math.max(span, minSigma * 2);
+
+  const strongest = residuals.reduce(
+    (best, pt) => Math.abs(pt.residual) > Math.abs(best.residual) ? pt : best,
+    residuals[0]
+  );
+
   let mu = strongest.x;
   let sigma = Math.max(span / 6, minSigma);
   let fit = solveAmplitude(residuals, mu, sigma);
@@ -1158,37 +1219,106 @@ function fitGaussianProfile(firstPoint, secondPoint) {
       { mu: mu + stepMu, sigma: sigma - stepSigma },
       { mu: mu + stepMu, sigma: sigma + stepSigma }
     ];
-
     candidates.forEach(candidate => {
       const candidateMu = Math.min(Math.max(candidate.mu, minX), maxX);
       const candidateSigma = Math.min(Math.max(candidate.sigma, minSigma), maxSigma);
       const candidateFit = solveAmplitude(residuals, candidateMu, candidateSigma);
       if (candidateFit.sse < fit.sse) {
-        mu = candidateMu;
-        sigma = candidateSigma;
-        fit = candidateFit;
-        improved = true;
+        mu = candidateMu; sigma = candidateSigma; fit = candidateFit; improved = true;
       }
     });
-
     if (!improved) {
-      stepMu *= 0.55;
-      stepSigma *= 0.55;
+      stepMu *= 0.55; stepSigma *= 0.55;
       if (stepMu < span / 10000 && stepSigma < span / 10000) break;
     }
   }
+  const fwhm = 2 * Math.sqrt(2 * Math.log(2)) * sigma;
+  return { amplitude: fit.amplitude, mean: mu, sigma, fwhm, sse: fit.sse };
+}
+
+// ── Bootstrap error estimation ────────────────────────────────────────────
+// Resamples the residuals N times with replacement, refits each time, and
+// returns the sample standard deviation of each parameter as error estimates.
+const BOOTSTRAP_N = 300;
+
+function bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit) {
+  const n = residuals.length;
+  const FWHM_FACTOR = 2 * Math.sqrt(2 * Math.log(2));
+  const results = { mean: [], sigma: [], fwhm: [], amplitude: [], pEW: [] };
+
+  for (let b = 0; b < BOOTSTRAP_N; b++) {
+    // Resample with replacement
+    const sample = [];
+    for (let i = 0; i < n; i++) {
+      sample.push(residuals[Math.floor(Math.random() * n)]);
+    }
+    const bfit = fitGaussian(sample, minX, maxX, span);
+    if (!bfit) continue;
+    results.mean.push(bfit.mean);
+    results.sigma.push(bfit.sigma);
+    results.fwhm.push(bfit.fwhm);
+    results.amplitude.push(bfit.amplitude);
+    // pEW for this bootstrap realisation
+    const bprofile = {
+      minX, maxX, continuum,
+      amplitude: bfit.amplitude,
+      mean: bfit.mean,
+      sigma: bfit.sigma,
+      fwhm: bfit.fwhm
+    };
+    results.pEW.push(pseudoEquivalentWidth(bprofile, 120));
+  }
+
+  const stddev = arr => {
+    if (arr.length < 2) return 0;
+    const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+    return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
+  };
+
+  return {
+    mean:      stddev(results.mean),
+    sigma:     stddev(results.sigma),
+    fwhm:      stddev(results.fwhm),
+    amplitude: stddev(results.amplitude),
+    pEW:       stddev(results.pEW)
+  };
+}
+
+function fitGaussianProfile(firstPoint, secondPoint) {
+  const minX = Math.min(firstPoint.restX, secondPoint.restX);
+  const maxX = Math.max(firstPoint.restX, secondPoint.restX);
+  const span = maxX - minX;
+  if (!Number.isFinite(span) || span <= 0) return null;
+
+  const continuum = continuumFromPoints(firstPoint, secondPoint);
+  const samples = currentSpectrumPoints().filter(point => point.restX >= minX && point.restX <= maxX);
+  if (samples.length < 5) return null;
+
+  const residuals = samples.map(point => ({
+    x: point.restX,
+    residual: point.flux - lineAt(continuum, point.restX)
+  }));
+
+  const bestFit = fitGaussian(residuals, minX, maxX, span);
+  if (!bestFit) return null;
+
+  const { amplitude, mean: mu, sigma, fwhm } = bestFit;
 
   const profile = {
     minX,
     maxX,
     continuum,
-    amplitude: fit.amplitude,
+    amplitude,
     mean: mu,
     sigma,
-    fwhm: 2 * Math.sqrt(2 * Math.log(2)) * sigma,
-    kind: fit.amplitude >= 0 ? "Emission" : "Absorption"
+    fwhm,
+    kind: amplitude >= 0 ? "Emission" : "Absorption"
   };
   profile.pEW = pseudoEquivalentWidth(profile, 240);
+
+  // Bootstrap error estimation
+  const errors = bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit);
+  profile.errors = errors;  // {mean, sigma, fwhm, amplitude, pEW}
 
   // Auto-match closest line from the line list within 3% of the fitted mean (observed frame)
   const observedMean = mu * redshiftFactor();
@@ -1270,6 +1400,89 @@ function profileSamples(profile, count) {
 }
 
 
+// ─── Error display helper ───────────────────────────────────────────────────
+
+// Compute the intended decimal places for a value at 6 sig figs.
+// Derived from magnitude, not the stripped display string, so that
+// trailing-zero stripping never silently reduces the error precision.
+function sigFigDecimals(value, sigFigs) {
+  if (!Number.isFinite(value) || value === 0) return 0;
+  const mag = Math.floor(Math.log10(Math.abs(value)));
+  if (mag >= sigFigs || mag < -3) return 0;
+  return Math.max(0, sigFigs - 1 - mag);
+}
+
+// Format a number to N significant figures, plain decimal string.
+function formatSigFig(value, sigFigs) {
+  if (!Number.isFinite(value)) return "–";
+  if (value === 0) return "0";
+  const abs = Math.abs(value);
+  const mag = Math.floor(Math.log10(abs));
+  if (mag >= sigFigs || mag < -3) {
+    return value.toPrecision(sigFigs).replace(/\.?0+e/, "e");
+  }
+  const decimals = sigFigDecimals(value, sigFigs);
+  return value.toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
+// Core paired formatter: value to 6 sig figs (trailing zeros stripped),
+// error rounded to match the decimal places actually shown in the value string.
+// Strategy: if the value's displayed decimal places are fewer than its theoretical
+// sig-fig precision (due to trailing-zero stripping), pad the value to the
+// theoretical precision so value and error always show the same decimal places.
+function pairFormat(value, error) {
+  const dec = sigFigDecimals(value, 6);  // theoretical decimal places at 6 sig figs
+  // Show value with full precision (no trailing-zero stripping) when there's an error,
+  // so both value and error align to the same decimal place.
+  const valStr = (error && Number.isFinite(error) && error !== 0 && dec > 0)
+    ? value.toFixed(dec)
+    : formatSigFig(value, 6);
+  if (!error || !Number.isFinite(error) || error === 0) {
+    return { valStr: formatSigFig(value, 6), errStr: null };
+  }
+  const errStr = dec > 0 ? Number(error).toFixed(dec) : Math.round(error).toString();
+  return { valStr, errStr };
+}
+
+// Format value+error into a display string with unit.
+function fitValueWithError(value, error, unit) {
+  if (value == null || !Number.isFinite(value)) return "–";
+  const { valStr, errStr } = pairFormat(value, error);
+  if (!errStr) return `${valStr} ${unit}`;
+  return `${valStr} ± ${errStr} ${unit}`;
+}
+
+// Paired formatter for table cells: returns {valStr, errStr}.
+function formatValueError(value, error) {
+  if (value == null || !Number.isFinite(value)) return { valStr: "–", errStr: "–" };
+  const { valStr, errStr } = pairFormat(value, error);
+  return { valStr, errStr: errStr || "–" };
+}
+function formatValueError(value, error) {
+  const valStr = (value != null && Number.isFinite(value)) ? formatSigFig(value, 6) : "–";
+  if (!error || !Number.isFinite(error) || error === 0) {
+    return { valStr, errStr: "–" };
+  }
+  const dec = (valStr.includes(".") && !valStr.includes("e"))
+    ? valStr.length - valStr.indexOf(".") - 1 : 0;
+  const errStr = dec > 0 ? Number(error).toFixed(dec) : Math.round(error).toString();
+  return { valStr, errStr };
+}
+
+// Velocity error propagation (first-order): σ_v ≈ (c / λ_rest) × σ_λ
+// This is accurate for σ_λ << λ_rest, which holds for typical spectral fitting.
+function profileMeanVelError(profile, rest) {
+  const e = profile.errors;
+  if (!e || !Number.isFinite(e.mean) || e.mean === 0) return null;
+  return Math.abs(SPEED_OF_LIGHT_KMS / rest * e.mean);
+}
+
+function profileFwhmVelError(profile, rest) {
+  const e = profile.errors;
+  if (!e || !Number.isFinite(e.fwhm) || e.fwhm === 0) return null;
+  return Math.abs(SPEED_OF_LIGHT_KMS / rest * e.fwhm);
+}
+
 // ─── Tabulate ───────────────────────────────────────────────────────────────
 
 // Compute velocity from mean and rest wavelength (same formula as fit card)
@@ -1293,18 +1506,24 @@ function tabulateData() {
   if (!average) {
     // One column group per fit card
     return profiles.map((p, i) => {
-      const hasVel = Number.isFinite(Number.parseFloat(p.lineRest)) && Number.parseFloat(p.lineRest) > 0;
+      const rest = Number.parseFloat(p.lineRest);
+      const hasVel = Number.isFinite(rest) && rest > 0;
       const label = (p.species && p.species.trim()) ? p.species.trim()
                   : `${p.kind} profile ${i + 1}`;
-      const fields = [
-        { key: "Mean (Å)",    value: p.mean },
-        { key: "FWHM (Å)",    value: p.fwhm },
-        { key: "pEW (Å)",     value: p.pEW },
+      const e = p.errors || {};
+      const cfg = state.columnConfig;
+      const allFields = [
+        { key: "Mean (Å)",    value: p.mean,        error: e.mean      || 0 },
+        { key: "FWHM (Å)",   value: p.fwhm,        error: e.fwhm      || 0 },
+        { key: "pEW (Å)",    value: p.pEW,         error: e.pEW       || 0 },
+        ...(hasVel ? [
+          { key: "Mean vel. (km/s)", value: profileMeanVel(p), error: profileMeanVelError(p, rest) || 0 },
+          { key: "FWHM vel. (km/s)", value: profileFwhmVel(p), error: profileFwhmVelError(p, rest) || 0 }
+        ] : [])
       ];
-      if (hasVel) {
-        fields.push({ key: "Mean vel. (km/s)",  value: profileMeanVel(p) });
-        fields.push({ key: "FWHM vel. (km/s)",  value: profileFwhmVel(p) });
-      }
+      const fields = allFields
+        .filter(f => cfg[f.key] !== false)
+        .map(f => ({ ...f, error: cfg.showErrors ? f.error : 0 }));
       return { label, fields, count: 1 };
     });
   }
@@ -1321,46 +1540,91 @@ function tabulateData() {
 
   const groups = [];
 
+  // Weighted mean: w_i = 1/σ_i². Error on weighted mean: σ = 1/√(Σw_i).
+  // Falls back to simple mean ± 0 when all errors are zero (noiseless data).
+  const weightedStats = (vals, errs) => {
+    if (!vals.length) return { value: null, error: null };
+    const allZeroErr = errs.every(e => !e || e === 0);
+    if (allZeroErr) {
+      // No bootstrap errors — simple mean; scatter as error if N > 1
+      const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+      if (vals.length === 1) return { value: m, error: 0 };
+      const scatter = Math.sqrt(vals.reduce((s, v) => s + (v - m) ** 2, 0) / (vals.length - 1));
+      return { value: m, error: scatter };
+    }
+    let sumW = 0, sumWV = 0;
+    vals.forEach((v, i) => {
+      const w = errs[i] && errs[i] > 0 ? 1 / (errs[i] ** 2) : 0;
+      sumW += w; sumWV += w * v;
+    });
+    if (sumW === 0) return { value: null, error: null };
+    const wMean = sumWV / sumW;
+    const sigmaWMean = 1 / Math.sqrt(sumW);
+    // σ_scatter: sample std dev of measured values around weighted mean
+    const sigmaScatter = vals.length > 1
+      ? Math.sqrt(vals.reduce((s, v) => s + (v - wMean) ** 2, 0) / (vals.length - 1))
+      : 0;
+    // Combine in quadrature: total error = √(σ_wmean² + σ_scatter²)
+    return { value: wMean, error: Math.sqrt(sigmaWMean ** 2 + sigmaScatter ** 2) };
+  };
+
   grouped.forEach((items, rest) => {
     const first = items[0].p;
-    const hasVel = Number.isFinite(Number.parseFloat(rest)) && Number.parseFloat(rest) > 0;
+    const restNum = Number.parseFloat(rest);
+    const hasVel = Number.isFinite(restNum) && restNum > 0;
     const speciesLabel = (first.species && first.species.trim()) ? first.species.trim() : rest;
-    const vals = key => items.map(({ p }) => {
-      if (key === "mean") return p.mean;
-      if (key === "fwhm") return p.fwhm;
-      if (key === "pEW") return p.pEW;
-      if (key === "meanVel") return profileMeanVel(p);
-      if (key === "fwhmVel") return profileFwhmVel(p);
-    }).filter(v => v != null && Number.isFinite(v));
 
-    const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
-    const std  = arr => {
-      if (arr.length <= 1) return 0;
-      const m = mean(arr);
-      return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / (arr.length - 1));
+    const getValsErrs = key => {
+      const vals = [], errs = [];
+      items.forEach(({ p }) => {
+        const e = p.errors || {};
+        let v, err;
+        if (key === "mean")    { v = p.mean;             err = e.mean || 0; }
+        if (key === "fwhm")    { v = p.fwhm;             err = e.fwhm || 0; }
+        if (key === "pEW")     { v = p.pEW;              err = e.pEW  || 0; }
+        if (key === "meanVel") { v = profileMeanVel(p);  err = profileMeanVelError(p, restNum) || 0; }
+        if (key === "fwhmVel") { v = profileFwhmVel(p);  err = profileFwhmVelError(p, restNum) || 0; }
+        if (v != null && Number.isFinite(v)) { vals.push(v); errs.push(err); }
+      });
+      return { vals, errs };
     };
 
-    const fields = [
-      { key: "Mean (Å)",          value: mean(vals("mean")),    error: std(vals("mean")) },
-      { key: "FWHM (Å)",          value: mean(vals("fwhm")),    error: std(vals("fwhm")) },
-      { key: "pEW (Å)",           value: mean(vals("pEW")),     error: std(vals("pEW")) },
+    const make = (key, label) => {
+      const { vals, errs } = getValsErrs(key);
+      const { value, error } = weightedStats(vals, errs);
+      return { key: label, value, error };
+    };
+
+    const cfg = state.columnConfig;
+    const allFields = [
+      make("mean",    "Mean (Å)"),
+      make("fwhm",    "FWHM (Å)"),
+      make("pEW",     "pEW (Å)"),
+      ...(hasVel ? [
+        make("meanVel", "Mean vel. (km/s)"),
+        make("fwhmVel", "FWHM vel. (km/s)")
+      ] : [])
     ];
-    if (hasVel) {
-      fields.push({ key: "Mean vel. (km/s)",  value: mean(vals("meanVel")), error: std(vals("meanVel")) });
-      fields.push({ key: "FWHM vel. (km/s)",  value: mean(vals("fwhmVel")), error: std(vals("fwhmVel")) });
-    }
+    const fields = allFields
+      .filter(f => cfg[f.key] !== false)
+      .map(f => ({ ...f, error: cfg.showErrors ? f.error : 0 }));
     groups.push({ label: speciesLabel, fields, count: items.length });
   });
 
-  // Ungrouped (no rest wavelength)
+  // Ungrouped (no rest wavelength) — use bootstrap errors directly
   ungrouped.forEach(({ p, i }) => {
     const label = (p.species && p.species.trim()) ? p.species.trim()
                 : `${p.kind} profile ${i + 1}`;
-    const fields = [
-      { key: "Mean (Å)",   value: p.mean,  error: 0 },
-      { key: "FWHM (Å)",   value: p.fwhm,  error: 0 },
-      { key: "pEW (Å)",    value: p.pEW,   error: 0 },
+    const e = p.errors || {};
+    const cfg = state.columnConfig;
+    const allFields = [
+      { key: "Mean (Å)",   value: p.mean,  error: e.mean || 0 },
+      { key: "FWHM (Å)",   value: p.fwhm,  error: e.fwhm || 0 },
+      { key: "pEW (Å)",    value: p.pEW,   error: e.pEW  || 0 },
     ];
+    const fields = allFields
+      .filter(f => cfg[f.key] !== false)
+      .map(f => ({ ...f, error: cfg.showErrors ? f.error : 0 }));
     groups.push({ label, fields, count: 1 });
   });
 
@@ -1390,8 +1654,9 @@ function renderTabulate() {
   // Row 2: field sub-headers
   const headRow2 = document.createElement("tr");
 
+  const showErr = state.columnConfig.showErrors !== false;
   data.forEach(group => {
-    const colCount = average ? group.fields.length * 2 : group.fields.length;
+    const colCount = group.fields.length * (showErr ? 2 : 1);
     const th = document.createElement("th");
     th.colSpan = colCount;
     th.className = "tab-group-header";
@@ -1403,7 +1668,7 @@ function renderTabulate() {
       th2.className = "tab-field-header";
       th2.textContent = f.key;
       headRow2.append(th2);
-      if (average) {
+      if (showErr) {
         const thErr = document.createElement("th");
         thErr.className = "tab-field-header tab-error-header";
         thErr.textContent = "Error";
@@ -1421,14 +1686,15 @@ function renderTabulate() {
   const tr = document.createElement("tr");
   data.forEach(group => {
     group.fields.forEach(f => {
+      const { valStr, errStr } = formatValueError(f.value, showErr ? f.error : 0);
       const td = document.createElement("td");
       td.className = "tab-value";
-      td.textContent = f.value != null ? formatNumber(f.value) : "–";
+      td.textContent = valStr;
       tr.append(td);
-      if (average) {
+      if (showErr) {
         const tdErr = document.createElement("td");
         tdErr.className = "tab-value tab-error-value";
-        tdErr.textContent = f.error != null ? formatNumber(f.error) : "–";
+        tdErr.textContent = errStr;
         tr.append(tdErr);
       }
     });
@@ -1446,25 +1712,26 @@ function downloadTabulateCsv() {
 
   // Header row 1: group labels
   const groupRow = data.flatMap(g => {
-    const cols = average ? g.fields.length * 2 : g.fields.length;
+    const cols = showErrCsv ? g.fields.length * 2 : g.fields.length;
     return [g.label, ...Array(cols - 1).fill("")];
   });
   rows.push(groupRow.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","));
 
+  const showErrCsv = state.columnConfig.showErrors !== false;
   // Header row 2: field names
   const fieldRow = data.flatMap(g =>
-    average ? g.fields.flatMap(f => [f.key, "Error"]) : g.fields.map(f => f.key)
+    showErrCsv ? g.fields.flatMap(f => [f.key, "Error"]) : g.fields.map(f => f.key)
   );
   rows.push(fieldRow.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","));
 
   // Data row
   const dataRow = data.flatMap(g =>
-    average
-      ? g.fields.flatMap(f => [
-          f.value != null ? formatNumber(f.value) : "",
-          f.error != null ? formatNumber(f.error) : ""
-        ])
-      : g.fields.map(f => f.value != null ? formatNumber(f.value) : "")
+    g.fields.flatMap(f => {
+      const { valStr, errStr } = formatValueError(f.value, showErrCsv ? f.error : 0);
+      return showErrCsv
+        ? [valStr === "–" ? "" : valStr, errStr === "–" ? "" : errStr]
+        : [valStr === "–" ? "" : valStr];
+    })
   );
   rows.push(dataRow.join(","));
 
@@ -1482,11 +1749,12 @@ function downloadTabulateJson() {
   const data = tabulateData();
   if (!data.length) return;
   const average = state.averageSameLines;
+  const showErrJson = state.columnConfig.showErrors !== false;
   const out = data.map(g => {
     const obj = { label: g.label };
     g.fields.forEach(f => {
       obj[f.key] = f.value != null ? f.value : null;
-      if (average) obj[`${f.key} Error`] = f.error != null ? f.error : null;
+      if (showErrJson) obj[`${f.key} Error`] = (f.error != null && f.error !== 0) ? f.error : null;
     });
     return obj;
   });
@@ -1519,6 +1787,7 @@ async function saveSession() {
     tabulateActive: state.tabulateActive,
     averageSameLines: state.averageSameLines,
     lineDisplayMode: state.lineDisplayMode || "shifted",
+    columnConfig: state.columnConfig,
     spectrum: state.spectrum,            // [{wavelength, flux}, ...]
     lines: state.lines.map(l => ({      // shallow copy, all fields are primitives
       visible: l.visible,
@@ -1538,6 +1807,7 @@ async function saveSession() {
       sigma: p.sigma,
       fwhm: p.fwhm,
       pEW: p.pEW,
+      errors: p.errors || null,
       kind: p.kind,
       species: p.species,
       lineRest: p.lineRest,
@@ -1620,8 +1890,27 @@ async function loadSession(file) {
   state.tabulateActive = session.tabulateActive === true;
   state.averageSameLines = session.averageSameLines === true;
   state.lineDisplayMode = session.lineDisplayMode === "observed" ? "observed" : "shifted";
+  // Reset to all-enabled defaults first, then apply saved values.
+  // Any key absent from the session file will default to true (enabled),
+  // so old sessions or partially-saved configs always show all columns.
+  state.columnConfig = {
+    "Mean (Å)": true,
+    "FWHM (Å)": true,
+    "pEW (Å)": true,
+    "Mean vel. (km/s)": true,
+    "FWHM vel. (km/s)": true,
+    showErrors: true
+  };
+  if (session.columnConfig && typeof session.columnConfig === "object") {
+    Object.assign(state.columnConfig, session.columnConfig);
+  }
   averageSameLinesCheckbox.checked = state.averageSameLines;
   lineDisplaySelect.value = state.lineDisplayMode;
+  // Sync column popup checkboxes to restored state
+  Object.entries(colCheckboxes).forEach(([key, cb]) => {
+    cb.checked = state.columnConfig[key] !== false;
+  });
+  colShowErrors.checked = state.columnConfig.showErrors !== false;
 
   // ── Restore line list ─────────────────────────────────────────────────────
   state.lines = Array.isArray(session.lines)
@@ -1653,6 +1942,7 @@ async function loadSession(file) {
           sigma: p.sigma,
           fwhm: p.fwhm,
           pEW: p.pEW,
+          errors: p.errors || null,
           kind: typeof p.kind === "string" ? p.kind : "Emission",
           species: String(p.species || ""),
           lineRest: String(p.lineRest || ""),
@@ -1695,6 +1985,11 @@ async function loadSession(file) {
   } else {
     fileStatus.textContent = state.fileName ? `${state.fileName} — no spectrum data` : "No spectrum loaded";
   }
+
+  // Always reset the tabulate section first, then re-render only if the
+  // loaded session had it active — prevents stale table from a prior session.
+  tabulateSection.hidden = true;
+  tabulateTableWrap.replaceChildren();
 
   renderAll();
   if (state.tabulateActive) renderTabulate();
