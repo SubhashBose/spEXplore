@@ -119,7 +119,12 @@ const state = {
   columnConfig: {
     "Mean (Å)": true,
     "FWHM (Å)": true,
+    "Height (𝐈)": true,
+    "Flux (𝐈·Å)": true,
     "pEW (Å)": true,
+    "FWHM direct (Å)": true,
+    "Flux direct (𝐈·Å)": true,
+    "pEW direct (Å)": true,
     "Mean vel. (km/s)": true,
     "FWHM vel. (km/s)": true,
     showErrors: true
@@ -157,11 +162,16 @@ const averageSameLinesCheckbox = document.querySelector("#averageSameLinesCheckb
 const selectColumnsButton = document.querySelector("#selectColumnsButton");
 const columnPopup = document.querySelector("#columnPopup");
 const colCheckboxes = {
-  "Mean (Å)":         document.querySelector("#colMean"),
-  "FWHM (Å)":         document.querySelector("#colFwhm"),
-  "pEW (Å)":          document.querySelector("#colPew"),
-  "Mean vel. (km/s)": document.querySelector("#colMeanVel"),
-  "FWHM vel. (km/s)": document.querySelector("#colFwhmVel"),
+  "Mean (Å)":           document.querySelector("#colMean"),
+  "FWHM (Å)":           document.querySelector("#colFwhm"),
+  "Height (𝐈)":           document.querySelector("#colHeight"),
+  "Flux (𝐈·Å)":          document.querySelector("#colArea"),
+  "pEW (Å)":              document.querySelector("#colPew"),
+  "FWHM direct (Å)":      document.querySelector("#colFwhmDirect"),
+  "Flux direct (𝐈·Å)":   document.querySelector("#colAreaDirect"),
+  "pEW direct (Å)":       document.querySelector("#colPewDirect"),
+  "Mean vel. (km/s)":   document.querySelector("#colMeanVel"),
+  "FWHM vel. (km/s)":   document.querySelector("#colFwhmVel"),
 };
 const colShowErrors = document.querySelector("#colShowErrors");
 const tabulateSection = document.querySelector("#tabulateSection");
@@ -557,9 +567,22 @@ function renderFittedProfiles() {
     const values = document.createElement("dl");
     values.className = "fit-values";
     const e = profile.errors || {};
-    appendFitValue(values, "Mean", fitValueWithError(profile.mean, e.mean, "Å"));
-    appendFitValue(values, "FWHM", fitValueWithError(profile.fwhm, e.fwhm, "Å"));
-    appendFitValue(values, "pEW",  fitValueWithError(profile.pEW,  e.pEW,  "Å"));
+    // Propagate area (Flux) error: σ_Flux = sqrt(2π) * sqrt((σ·σ_A)² + (A·σ_σ)²)
+    const SQRT2PI_CARD = Math.sqrt(2 * Math.PI);
+    const fluxErr = (e.amplitude != null && e.sigma != null)
+      ? SQRT2PI_CARD * Math.sqrt((profile.sigma * e.amplitude) ** 2 + (profile.amplitude * e.sigma) ** 2)
+      : (e.area || null);
+    appendFitValue(values, "Mean",           fitValueWithError(profile.mean,       e.mean,      "Å"));
+    appendFitValue(values, "FWHM",           fitValueWithError(profile.fwhm,       e.fwhm,      "Å"));
+    appendFitValue(values, "Height",         fitValueWithError(profile.amplitude,  e.amplitude, "(𝐈)"));
+    appendFitValue(values, "Flux",           fitValueWithError(profile.area,       fluxErr,     "(𝐈·Å)"));
+    appendFitValue(values, "pEW",            fitValueWithError(profile.pEW,        e.pEW,       "Å"));
+    appendFitValue(values, "FWHM (direct)",  profile.directFWHM != null
+      ? fitValueWithError(profile.directFWHM, e.directFWHM, "Å") : "–");
+    appendFitValue(values, "Flux (direct)",  profile.directArea != null
+      ? fitValueWithError(profile.directArea, e.directArea, "(𝐈·Å)") : "–");
+    appendFitValue(values, "pEW (direct)",   profile.directPEW != null
+      ? fitValueWithError(profile.directPEW, e.directPEW, "Å") : "–");
     appendFitValue(values, "Range", `${formatNumber(profile.minX)}–${formatNumber(profile.maxX)} Å`);
 
     // Velocity rows — shown only when rest wavelength is set
@@ -1037,7 +1060,7 @@ function drawAxes(width, height, plot, domain, range) {
   ctx.save();
   ctx.translate(16, plot.top + plotHeight / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText("Flux", 0, 0);
+  ctx.fillText("Flux (𝐈)", 0, 0);
   ctx.restore();
 }
 
@@ -1243,22 +1266,31 @@ const BOOTSTRAP_N = 300;
 
 function bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit) {
   const n = residuals.length;
-  const FWHM_FACTOR = 2 * Math.sqrt(2 * Math.log(2));
-  const results = { mean: [], sigma: [], fwhm: [], amplitude: [], pEW: [] };
+  const SQRT2PI_B = Math.sqrt(2 * Math.PI);
+  const results = {
+    mean: [], sigma: [], fwhm: [], amplitude: [], pEW: [], area: [],
+    directFWHM: [], directArea: [], directPEW: []
+  };
+
+  // Compute fit residuals (data residual minus model) to resample
+  const fitResiduals = residuals.map(pt => ({
+    x: pt.x,
+    noise: pt.residual - gaussianValue(bestFit.amplitude, bestFit.mean, bestFit.sigma, pt.x)
+  }));
 
   for (let b = 0; b < BOOTSTRAP_N; b++) {
-    // Resample with replacement
-    const sample = [];
-    for (let i = 0; i < n; i++) {
-      sample.push(residuals[Math.floor(Math.random() * n)]);
-    }
+    // Residual bootstrap: keep x values fixed, add randomly resampled fit-residuals.
+    const sample = residuals.map((pt, i) => {
+      const noise = fitResiduals[Math.floor(Math.random() * n)].noise;
+      return { x: pt.x, residual: pt.residual - fitResiduals[i].noise + noise };
+    });
     const bfit = fitGaussian(sample, minX, maxX, span);
     if (!bfit) continue;
     results.mean.push(bfit.mean);
     results.sigma.push(bfit.sigma);
     results.fwhm.push(bfit.fwhm);
     results.amplitude.push(bfit.amplitude);
-    // pEW for this bootstrap realisation
+    results.area.push(bfit.amplitude * bfit.sigma * SQRT2PI_B);
     const bprofile = {
       minX, maxX, continuum,
       amplitude: bfit.amplitude,
@@ -1267,6 +1299,13 @@ function bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit) {
       fwhm: bfit.fwhm
     };
     results.pEW.push(pseudoEquivalentWidth(bprofile, 120));
+    // Direct measurements on the same perturbed sample
+    const da = directArea(sample, continuum);
+    const dp = directPEW(sample, continuum);
+    const df = directFWHM(sample);
+    if (da != null) results.directArea.push(da);
+    if (dp != null) results.directPEW.push(dp);
+    if (df != null) results.directFWHM.push(df);
   }
 
   const stddev = arr => {
@@ -1276,12 +1315,277 @@ function bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit) {
   };
 
   return {
-    mean:      stddev(results.mean),
-    sigma:     stddev(results.sigma),
-    fwhm:      stddev(results.fwhm),
-    amplitude: stddev(results.amplitude),
-    pEW:       stddev(results.pEW)
+    mean:       stddev(results.mean),
+    sigma:      stddev(results.sigma),
+    fwhm:       stddev(results.fwhm),
+    amplitude:  stddev(results.amplitude),
+    pEW:        stddev(results.pEW),
+    area:       stddev(results.area),
+    directFWHM: stddev(results.directFWHM),
+    directArea: stddev(results.directArea),
+    directPEW:  stddev(results.directPEW)
   };
+}
+
+// ── Direct measurements from data ───────────────────────────────────────────
+
+// Integrated area of (flux − continuum) over data points using trapezoid rule
+function directArea(residuals, continuum) {
+  if (residuals.length < 2) return null;
+  const pts = [...residuals].sort((a, b) => a.x - b.x);
+  let area = 0;
+  for (let i = 1; i < pts.length; i++) {
+    area += 0.5 * (pts[i - 1].residual + pts[i].residual) * (pts[i].x - pts[i - 1].x);
+  }
+  return area;
+}
+
+// pEW from data: integral of -(residual / continuum) over data points
+function directPEW(residuals, continuum) {
+  if (residuals.length < 2) return null;
+  const pts = [...residuals].sort((a, b) => a.x - b.x);
+  let area = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const x0 = pts[i - 1].x, x1 = pts[i].x;
+    const c0 = lineAt(continuum, x0), c1 = lineAt(continuum, x1);
+    const n0 = Math.abs(c0) > 0 ? pts[i - 1].residual / c0 : 0;
+    const n1 = Math.abs(c1) > 0 ? pts[i].residual     / c1 : 0;
+    area += 0.5 * (n0 + n1) * (x1 - x0);
+  }
+  return -area;
+}
+
+// Solve a 3x3 linear system Ax=b using Cramer's rule (for quadratic poly fit).
+function solve3x3(A, b) {
+  const det = (m, r, c) => {
+    const idx = (i, j) => m[i][j];
+    return idx(r[0],c[0])*(idx(r[1],c[1])*idx(r[2],c[2])-idx(r[1],c[2])*idx(r[2],c[1]))
+          -idx(r[0],c[1])*(idx(r[1],c[0])*idx(r[2],c[2])-idx(r[1],c[2])*idx(r[2],c[0]))
+          +idx(r[0],c[2])*(idx(r[1],c[0])*idx(r[2],c[1])-idx(r[1],c[1])*idx(r[2],c[0]));
+  };
+  const r=[0,1,2], c=[0,1,2];
+  const D = det(A,r,c);
+  if (Math.abs(D) < 1e-30) return null;
+  const sub = (col, vec) => A.map((row, i) => row.map((v, j) => j===col ? vec[i] : v));
+  return [0,1,2].map(i => det(sub(i,b),r,c)/D);
+}
+
+// Fit a quadratic to {x, y} points via normal equations. Returns [a,b,c].
+function fitQuadratic(pts) {
+  let s0=0,s1=0,s2=0,s3=0,s4=0,sy0=0,sy1=0,sy2=0;
+  pts.forEach(([x,y]) => {
+    s0+=1; s1+=x; s2+=x*x; s3+=x*x*x; s4+=x*x*x*x;
+    sy0+=y; sy1+=x*y; sy2+=x*x*y;
+  });
+  const A = [[s4,s3,s2],[s3,s2,s1],[s2,s1,s0]];
+  return solve3x3(A, [sy2,sy1,sy0]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Savitzky-Golay style smoothing for robust direct FWHM measurement
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Adaptive smoothing window based on number of points
+function sgWindowSize(n) {
+  let w = Math.round(n * 0.08);
+
+  if (w < 5) w = 5;
+  if ((w & 1) === 0) w += 1; // force odd
+
+  const maxAllowed = (n & 1) ? n : n - 1;
+  return Math.min(w, Math.max(5, maxAllowed));
+}
+
+// Smooth profile using repeated local quadratic fits.
+// Similar behaviour to Savitzky-Golay but easier to implement.
+function smoothProfile(pts) {
+  const n = pts.length;
+
+  if (n < 5) {
+    return pts.map(p => p.residual);
+  }
+
+  const window = sgWindowSize(n);
+  const half = Math.floor(window / 2);
+
+  const smooth = new Array(n);
+
+  for (let i = 0; i < n; i++) {
+
+    const lo = Math.max(0, i - half);
+    const hi = Math.min(n - 1, i + half);
+
+    let s0 = 0;
+    let s1 = 0;
+    let s2 = 0;
+    let s3 = 0;
+    let s4 = 0;
+
+    let sy0 = 0;
+    let sy1 = 0;
+    let sy2 = 0;
+
+    for (let j = lo; j <= hi; j++) {
+
+      const x = pts[j].x - pts[i].x;
+      const y = pts[j].residual;
+
+      const x2 = x * x;
+
+      s0 += 1;
+      s1 += x;
+      s2 += x2;
+      s3 += x2 * x;
+      s4 += x2 * x2;
+
+      sy0 += y;
+      sy1 += x * y;
+      sy2 += x2 * y;
+    }
+
+    const coeffs = solve3x3(
+      [
+        [s4, s3, s2],
+        [s3, s2, s1],
+        [s2, s1, s0]
+      ],
+      [sy2, sy1, sy0]
+    );
+
+    smooth[i] = coeffs ? coeffs[2] : pts[i].residual;
+  }
+
+  return smooth;
+}
+
+// Linear interpolation between two points
+function interpolateCrossing(x1, y1, x2, y2, target) {
+  const dy = y2 - y1;
+
+  if (Math.abs(dy) < 1e-30) {
+    return (x1 + x2) / 2;
+  }
+
+  const t = (target - y1) / dy;
+
+  return x1 + t * (x2 - x1);
+}
+
+// Find half-maximum crossing on one side of peak
+function findHalfMaxCrossing(
+  pts,
+  smooth,
+  peakIdx,
+  halfVal,
+  direction
+) {
+  const sign = Math.sign(halfVal);
+
+  if (direction < 0) {
+
+    for (let i = peakIdx; i > 0; i--) {
+
+      const y0 = smooth[i];
+      const y1 = smooth[i - 1];
+
+      const crossed =
+        (sign * (y0 - halfVal) >= 0 &&
+         sign * (y1 - halfVal) <= 0) ||
+        (sign * (y0 - halfVal) <= 0 &&
+         sign * (y1 - halfVal) >= 0);
+
+      if (crossed) {
+        return interpolateCrossing(
+          pts[i].x,
+          y0,
+          pts[i - 1].x,
+          y1,
+          halfVal
+        );
+      }
+    }
+
+  } else {
+
+    for (let i = peakIdx; i < pts.length - 1; i++) {
+
+      const y0 = smooth[i];
+      const y1 = smooth[i + 1];
+
+      const crossed =
+        (sign * (y0 - halfVal) >= 0 &&
+         sign * (y1 - halfVal) <= 0) ||
+        (sign * (y0 - halfVal) <= 0 &&
+         sign * (y1 - halfVal) >= 0);
+
+      if (crossed) {
+        return interpolateCrossing(
+          pts[i].x,
+          y0,
+          pts[i + 1].x,
+          y1,
+          halfVal
+        );
+      }
+    }
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct FWHM measurement from smoothed profile
+// ─────────────────────────────────────────────────────────────────────────────
+
+function directFWHM(residuals) {
+
+  if (residuals.length < 5) {
+    return null;
+  }
+
+  const pts = [...residuals].sort((a, b) => a.x - b.x);
+
+  // Smooth continuum-subtracted profile
+  const smooth = smoothProfile(pts);
+
+  // Find strongest peak (works for emission and absorption)
+  let peakIdx = 0;
+
+  for (let i = 1; i < smooth.length; i++) {
+    if (Math.abs(smooth[i]) > Math.abs(smooth[peakIdx])) {
+      peakIdx = i;
+    }
+  }
+
+  const peakVal = smooth[peakIdx];
+
+  if (!Number.isFinite(peakVal) || peakVal === 0) {
+    return null;
+  }
+
+  const halfVal = peakVal / 2;
+
+  const leftX = findHalfMaxCrossing(
+    pts,
+    smooth,
+    peakIdx,
+    halfVal,
+    -1
+  );
+
+  const rightX = findHalfMaxCrossing(
+    pts,
+    smooth,
+    peakIdx,
+    halfVal,
+    +1
+  );
+
+  if (leftX == null || rightX == null) {
+    return null;
+  }
+
+  return rightX - leftX;
 }
 
 function fitGaussianProfile(firstPoint, secondPoint) {
@@ -1316,9 +1620,18 @@ function fitGaussianProfile(firstPoint, secondPoint) {
   };
   profile.pEW = pseudoEquivalentWidth(profile, 240);
 
+  // Model-based area: analytical integral of fitted Gaussian = A * sigma * sqrt(2pi)
+  const SQRT2PI = Math.sqrt(2 * Math.PI);
+  profile.area = profile.amplitude * profile.sigma * SQRT2PI;
+
+  // Direct measurements from continuum-subtracted data
+  profile.directArea = directArea(residuals, continuum);
+  profile.directPEW  = directPEW(residuals, continuum);
+  profile.directFWHM = directFWHM(residuals);
+
   // Bootstrap error estimation
   const errors = bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit);
-  profile.errors = errors;  // {mean, sigma, fwhm, amplitude, pEW}
+  profile.errors = errors;  // {mean, sigma, fwhm, amplitude, pEW, area}
 
   // Auto-match closest line from the line list within 3% of the fitted mean (observed frame)
   const observedMean = mu * redshiftFactor();
@@ -1425,21 +1738,40 @@ function formatSigFig(value, sigFigs) {
   return value.toFixed(decimals).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 }
 
-// Core paired formatter: value to 6 sig figs (trailing zeros stripped),
-// error rounded to match the decimal places actually shown in the value string.
-// Strategy: if the value's displayed decimal places are fewer than its theoretical
-// sig-fig precision (due to trailing-zero stripping), pad the value to the
-// theoretical precision so value and error always show the same decimal places.
+// Core paired formatter: value to 6 sig figs, error to matching precision.
+//
+// Two cases:
+// 1. Decimal range (|value| in [0.001, 10^6)): use toFixed(dec) for value so
+//    trailing zeros are kept for alignment; error rounded to same dec places.
+// 2. Exponential range: both value and error share the same base-10 exponent.
+//    Format as "X.XXXXXe+N ± Y.YYYYYe+N" where the mantissa of the error is
+//    expressed with the same number of decimal places as the value's mantissa,
+//    but written in the same exponent notation.
 function pairFormat(value, error) {
-  const dec = sigFigDecimals(value, 6);  // theoretical decimal places at 6 sig figs
-  // Show value with full precision (no trailing-zero stripping) when there's an error,
-  // so both value and error align to the same decimal place.
-  const valStr = (error && Number.isFinite(error) && error !== 0 && dec > 0)
-    ? value.toFixed(dec)
-    : formatSigFig(value, 6);
   if (!error || !Number.isFinite(error) || error === 0) {
     return { valStr: formatSigFig(value, 6), errStr: null };
   }
+
+  const abs = Math.abs(value);
+  const mag = Math.floor(Math.log10(abs));
+  const sigFigs = 6;
+
+  // Exponential range: share the same exponent for value and error
+  if (mag >= sigFigs || mag < -3) {
+    // Express both as mantissa × 10^mag
+    const scale = Math.pow(10, mag);
+    const valMantissa = value / scale;
+    const errMantissa = error / scale;
+    // Mantissa decimal places = sigFigs - 1 (e.g. 5.92712 has 5 decimals)
+    const mantissaDec = sigFigs - 1;
+    const valStr = valMantissa.toFixed(mantissaDec) + "e" + (mag >= 0 ? "+" : "") + mag;
+    const errStr = errMantissa.toFixed(mantissaDec).replace(/\.?0+$/, "") + "e" + (mag >= 0 ? "+" : "") + mag;
+    return { valStr, errStr };
+  }
+
+  // Decimal range: use theoretical sig-fig decimal places for alignment
+  const dec = sigFigDecimals(value, sigFigs);
+  const valStr = dec > 0 ? value.toFixed(dec) : formatSigFig(value, sigFigs);
   const errStr = dec > 0 ? Number(error).toFixed(dec) : Math.round(error).toString();
   return { valStr, errStr };
 }
@@ -1457,16 +1789,6 @@ function formatValueError(value, error) {
   if (value == null || !Number.isFinite(value)) return { valStr: "–", errStr: "–" };
   const { valStr, errStr } = pairFormat(value, error);
   return { valStr, errStr: errStr || "–" };
-}
-function formatValueError(value, error) {
-  const valStr = (value != null && Number.isFinite(value)) ? formatSigFig(value, 6) : "–";
-  if (!error || !Number.isFinite(error) || error === 0) {
-    return { valStr, errStr: "–" };
-  }
-  const dec = (valStr.includes(".") && !valStr.includes("e"))
-    ? valStr.length - valStr.indexOf(".") - 1 : 0;
-  const errStr = dec > 0 ? Number(error).toFixed(dec) : Math.round(error).toString();
-  return { valStr, errStr };
 }
 
 // Velocity error propagation (first-order): σ_v ≈ (c / λ_rest) × σ_λ
@@ -1513,9 +1835,17 @@ function tabulateData() {
       const e = p.errors || {};
       const cfg = state.columnConfig;
       const allFields = [
-        { key: "Mean (Å)",    value: p.mean,        error: e.mean      || 0 },
-        { key: "FWHM (Å)",   value: p.fwhm,        error: e.fwhm      || 0 },
-        { key: "pEW (Å)",    value: p.pEW,         error: e.pEW       || 0 },
+        { key: "Mean (Å)",            value: p.mean,        error: e.mean      || 0 },
+        { key: "FWHM (Å)",            value: p.fwhm,        error: e.fwhm      || 0 },
+        { key: "Height (𝐈)",           value: p.amplitude,   error: e.amplitude || 0 },
+        { key: "Flux (𝐈·Å)",         value: p.area,
+          error: (e.amplitude != null && e.sigma != null)
+            ? Math.sqrt(2*Math.PI) * Math.sqrt((p.sigma*(e.amplitude||0))**2 + (p.amplitude*(e.sigma||0))**2)
+            : (e.area || 0) },
+        { key: "pEW (Å)",             value: p.pEW,         error: e.pEW       || 0 },
+        { key: "FWHM direct (Å)",     value: p.directFWHM,  error: e.directFWHM || 0 },
+        { key: "Flux direct (𝐈·Å)",  value: p.directArea,  error: e.directArea  || 0 },
+        { key: "pEW direct (Å)",      value: p.directPEW,   error: e.directPEW   || 0 },
         ...(hasVel ? [
           { key: "Mean vel. (km/s)", value: profileMeanVel(p), error: profileMeanVelError(p, rest) || 0 },
           { key: "FWHM vel. (km/s)", value: profileFwhmVel(p), error: profileFwhmVelError(p, rest) || 0 }
@@ -1579,11 +1909,19 @@ function tabulateData() {
       items.forEach(({ p }) => {
         const e = p.errors || {};
         let v, err;
-        if (key === "mean")    { v = p.mean;             err = e.mean || 0; }
-        if (key === "fwhm")    { v = p.fwhm;             err = e.fwhm || 0; }
-        if (key === "pEW")     { v = p.pEW;              err = e.pEW  || 0; }
-        if (key === "meanVel") { v = profileMeanVel(p);  err = profileMeanVelError(p, restNum) || 0; }
-        if (key === "fwhmVel") { v = profileFwhmVel(p);  err = profileFwhmVelError(p, restNum) || 0; }
+        if (key === "mean")       { v = p.mean;             err = e.mean      || 0; }
+        if (key === "fwhm")       { v = p.fwhm;             err = e.fwhm      || 0; }
+        if (key === "height")     { v = p.amplitude;  err = e.amplitude || 0; }
+        if (key === "flux")       { v = p.area;
+          err = (e.amplitude != null && e.sigma != null)
+            ? Math.sqrt(2*Math.PI) * Math.sqrt((p.sigma*(e.amplitude||0))**2 + (p.amplitude*(e.sigma||0))**2)
+            : (e.area || 0); }
+        if (key === "pEW")        { v = p.pEW;        err = e.pEW       || 0; }
+        if (key === "fwhmDirect") { v = p.directFWHM; err = e.directFWHM || 0; }
+        if (key === "fluxDirect") { v = p.directArea; err = e.directArea  || 0; }
+        if (key === "pewDirect")  { v = p.directPEW;  err = e.directPEW   || 0; }
+        if (key === "meanVel")    { v = profileMeanVel(p);  err = profileMeanVelError(p, restNum) || 0; }
+        if (key === "fwhmVel")    { v = profileFwhmVel(p);  err = profileFwhmVelError(p, restNum) || 0; }
         if (v != null && Number.isFinite(v)) { vals.push(v); errs.push(err); }
       });
       return { vals, errs };
@@ -1597,9 +1935,14 @@ function tabulateData() {
 
     const cfg = state.columnConfig;
     const allFields = [
-      make("mean",    "Mean (Å)"),
-      make("fwhm",    "FWHM (Å)"),
-      make("pEW",     "pEW (Å)"),
+      make("mean",       "Mean (Å)"),
+      make("fwhm",       "FWHM (Å)"),
+      make("height",     "Height (𝐈)"),
+      make("flux",       "Flux (𝐈·Å)"),
+      make("pEW",        "pEW (Å)"),
+      make("fwhmDirect", "FWHM direct (Å)"),
+      make("fluxDirect", "Flux direct (𝐈·Å)"),
+      make("pewDirect",  "pEW direct (Å)"),
       ...(hasVel ? [
         make("meanVel", "Mean vel. (km/s)"),
         make("fwhmVel", "FWHM vel. (km/s)")
@@ -1618,9 +1961,17 @@ function tabulateData() {
     const e = p.errors || {};
     const cfg = state.columnConfig;
     const allFields = [
-      { key: "Mean (Å)",   value: p.mean,  error: e.mean || 0 },
-      { key: "FWHM (Å)",   value: p.fwhm,  error: e.fwhm || 0 },
-      { key: "pEW (Å)",    value: p.pEW,   error: e.pEW  || 0 },
+      { key: "Mean (Å)",            value: p.mean,       error: e.mean      || 0 },
+      { key: "FWHM (Å)",            value: p.fwhm,       error: e.fwhm      || 0 },
+      { key: "Height (𝐈)",          value: p.amplitude,  error: e.amplitude || 0 },
+      { key: "Flux (𝐈·Å)",        value: p.area,
+        error: (e.amplitude != null && e.sigma != null)
+          ? Math.sqrt(2*Math.PI) * Math.sqrt((p.sigma*(e.amplitude||0))**2 + (p.amplitude*(e.sigma||0))**2)
+          : (e.area || 0) },
+      { key: "pEW (Å)",             value: p.pEW,        error: e.pEW       || 0 },
+      { key: "FWHM direct (Å)",     value: p.directFWHM, error: e.directFWHM || 0 },
+      { key: "Flux direct (𝐈·Å)", value: p.directArea,  error: e.directArea  || 0 },
+      { key: "pEW direct (Å)",      value: p.directPEW,  error: e.directPEW   || 0 },
     ];
     const fields = allFields
       .filter(f => cfg[f.key] !== false)
@@ -1807,7 +2158,21 @@ async function saveSession() {
       sigma: p.sigma,
       fwhm: p.fwhm,
       pEW: p.pEW,
-      errors: p.errors || null,
+      errors: p.errors ? {
+        mean:       p.errors.mean,
+        sigma:      p.errors.sigma,
+        fwhm:       p.errors.fwhm,
+        amplitude:  p.errors.amplitude,
+        pEW:        p.errors.pEW,
+        area:       p.errors.area,
+        directFWHM: p.errors.directFWHM,
+        directArea: p.errors.directArea,
+        directPEW:  p.errors.directPEW
+      } : null,
+      area: p.area,
+      directArea: p.directArea,
+      directPEW:  p.directPEW,
+      directFWHM: p.directFWHM,
       kind: p.kind,
       species: p.species,
       lineRest: p.lineRest,
@@ -1896,7 +2261,12 @@ async function loadSession(file) {
   state.columnConfig = {
     "Mean (Å)": true,
     "FWHM (Å)": true,
+    "Height (𝐈)": true,
+    "Flux (𝐈·Å)": true,
     "pEW (Å)": true,
+    "FWHM direct (Å)": true,
+    "Flux direct (𝐈·Å)": true,
+    "pEW direct (Å)": true,
     "Mean vel. (km/s)": true,
     "FWHM vel. (km/s)": true,
     showErrors: true
@@ -1943,6 +2313,10 @@ async function loadSession(file) {
           fwhm: p.fwhm,
           pEW: p.pEW,
           errors: p.errors || null,
+          area: Number.isFinite(p.area) ? p.area : null,
+          directArea: Number.isFinite(p.directArea) ? p.directArea : null,
+          directPEW:  Number.isFinite(p.directPEW)  ? p.directPEW  : null,
+          directFWHM: Number.isFinite(p.directFWHM) ? p.directFWHM : null,
           kind: typeof p.kind === "string" ? p.kind : "Emission",
           species: String(p.species || ""),
           lineRest: String(p.lineRest || ""),
