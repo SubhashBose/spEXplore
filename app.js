@@ -1633,16 +1633,16 @@ function fitGaussianProfile(firstPoint, secondPoint) {
   const errors = bootstrapErrors(residuals, minX, maxX, span, continuum, bestFit);
   profile.errors = errors;  // {mean, sigma, fwhm, amplitude, pEW, area}
 
-  // Auto-match closest line from the line list within 3% of the fitted mean (observed frame)
-  const observedMean = mu * redshiftFactor();
-  const tolerance = observedMean * 0.03;
+  // Auto-match closest line from the line list (rest+velocity lam) within 3% of the fitted mean (rest frame lam)
+  //const observedMean = mu * redshiftFactor();
+  const tolerance = mu * 0.03;
   let bestLine = null;
   let bestDist = Infinity;
   state.lines.forEach(line => {
     if (line.visible === false) return;
-    const obs = numericValue(line.observed);
-    if (!Number.isFinite(obs)) return;
-    const dist = Math.abs(obs - observedMean);
+    const shifted = dopplerShift(numericValue(line.rest), numericValue(line.velocity));
+    if (!Number.isFinite(shifted)) return;
+    const dist = Math.abs(shifted - mu);
     if (dist <= tolerance && dist < bestDist) {
       bestDist = dist;
       bestLine = line;
@@ -2411,7 +2411,15 @@ function handleMouseMove(event) {
   const restX = pxToValue(point.x, plot.left, width - plot.right, state.currentDomain.min, state.currentDomain.max);
   const flux = pxToValue(point.y, height - plot.bottom, plot.top, state.currentRange.min, state.currentRange.max);
   const observedX = restX * redshiftFactor();
-  mouseReadout.textContent = `Rest x: ${formatNumber(restX)} Å | Obs x: ${formatNumber(observedX)} Å | Flux: ${formatNumber(flux)}`;
+
+  // Adaptive decimal places: ceil(log10(x_range) / 1.5), offset so narrow zoom shows more digits
+  const xRange = state.currentDomain.max - state.currentDomain.min;
+  const xDec = xRange > 0
+    ? Math.max(0, 4 - Math.ceil(Math.log10(xRange) / 1.5))
+    : 4;
+  const fmtX = v => v.toFixed(xDec);
+
+  mouseReadout.textContent = `Rest x: ${fmtX(restX)} Å | Obs x: ${fmtX(observedX)} Å | Flux: ${formatNumber(flux)}`;
 }
 
 function finishDragZoom() {
