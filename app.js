@@ -31,7 +31,7 @@ function dopplerFwhmVel(lambdaMean, fwhmAng, lambdaRest) {
   return Math.abs(vRed - vBlue);
 }
 
-const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#c2410c", "#1d4ed8"];
+const DEFAULT_LINE_COLORS = ["#b42318", "#0f766e", "#7c3aed", "#9ab60c", "#1d4ed8", "#d18215"];
 
 const INBUILT_LINES = [
   { name: "Ly-alpha", rest: 1215.67 },
@@ -301,7 +301,7 @@ plotPanel.addEventListener("drop", event => {
 
 canvas.addEventListener("mousemove", handleMouseMove);
 canvas.addEventListener("mouseleave", () => {
-  mouseReadout.textContent = "Rest x: - | Flux: -";
+  mouseReadout.textContent = "Rest λ: - | Flux: -";
   if (!state.dragStart) return;
   state.dragStart = null;
   state.dragCurrent = null;
@@ -552,7 +552,7 @@ function renderFittedProfiles() {
     restWrap.className = "fit-field-wrap";
     const restLabel = document.createElement("span");
     restLabel.className = "line-field-label";
-    restLabel.textContent = "Rest (Å)";
+    restLabel.textContent = "Rest λ (Å)";
     const restInput = document.createElement("input");
     restInput.type = "number";
     restInput.className = "fit-rest-input";
@@ -697,7 +697,7 @@ function renderLineTable() {
     });
     velocityInput = velocityCell.querySelector("input[type='text']");
 
-    const obsLabel = state.lineDisplayMode === "shifted" ? "Shifted Å" : "Observed Å";
+    const obsLabel = state.lineDisplayMode === "shifted" ? "Shifted λ (Å)" : "Observed λ (Å)";
     const observedCell = numericSliderCell(obsLabel, line.observed, "0.001", () => numericValue(line.observed), value => {
       line.observed = formatInputValue(value, 3);
       syncLineVelocity(line);
@@ -718,7 +718,7 @@ function renderLineTable() {
         syncLineObserved(line);
         renderAll();
       }),
-      numericSliderCell("Rest Å", line.rest, "0.001", () => numericValue(line.rest), value => {
+      numericSliderCell("Rest λ (Å)", line.rest, "0.001", () => numericValue(line.rest), value => {
         line.rest = formatInputValue(value, 3);
         syncLineObserved(line);
         refreshCoupledInputs();
@@ -1060,7 +1060,7 @@ function drawAxes(width, height, plot, domain, range) {
   ctx.save();
   ctx.translate(16, plot.top + plotHeight / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText("Flux (𝐈)", 0, 0);
+  ctx.fillText("Flux density (𝐈)", 0, 0);
   ctx.restore();
 }
 
@@ -1172,7 +1172,7 @@ function drawFittedProfiles(width, height, plot, domain, range) {
     if (profile.visible === false) return;
     if (profile.maxX < domain.min || profile.minX > domain.max) return;
 
-    const color = profile.amplitude >= 0 ? "#c2410c" : "#1d4ed8";
+    const color = profile.amplitude >= 0 ? "#c2410c" : "#1d77d8";
     const samples = profileSamples(profile, 160);
 
     ctx.strokeStyle = "#66716d";
@@ -1185,7 +1185,7 @@ function drawFittedProfiles(width, height, plot, domain, range) {
 
     ctx.setLineDash([]);
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     samples.forEach((sample, index) => {
       const x = xToPx(sample.x);
@@ -1618,7 +1618,7 @@ function fitGaussianProfile(firstPoint, secondPoint) {
     fwhm,
     kind: amplitude >= 0 ? "Emission" : "Absorption"
   };
-  profile.pEW = pseudoEquivalentWidth(profile, 240);
+  profile.pEW = pseudoEquivalentWidth(profile, 500);
 
   // Model-based area: analytical integral of fitted Gaussian = A * sigma * sqrt(2pi)
   const SQRT2PI = Math.sqrt(2 * Math.PI);
@@ -2370,23 +2370,33 @@ async function loadSession(file) {
 }
 
 function pseudoEquivalentWidth(profile, count) {
-  const samples = profileSamples(profile, count);
-  // Use a relative threshold based on the peak continuum value to handle
-  // any flux scale (including typical astro units like 1e-17 erg/s/cm²/Å)
-  const peakContinuum = Math.max(
-    Math.abs(continuumAt(profile, profile.minX)),
-    Math.abs(continuumAt(profile, profile.maxX))
-  );
+  // Integrate over the full Gaussian model: ±10σ around the mean,
+  // with the continuum linearly extrapolated beyond the clicked range.
+  // At ±10σ the Gaussian contributes < e^{-50} ≈ 0, so truncation is negligible.
+  const intMin = profile.mean - 10 * profile.sigma;
+  const intMax = profile.mean + 10 * profile.sigma;
+
+  // Use a relative threshold based on the continuum at the line centre
+  const peakContinuum = Math.abs(continuumAt(profile, profile.mean));
   const threshold = peakContinuum * 1e-10;
+
+  const steps = Math.max(2, count);
   let area = 0;
-  for (let index = 1; index < samples.length; index += 1) {
-    const previous = samples[index - 1];
-    const current = samples[index];
-    const previousBase = continuumAt(profile, previous.x);
-    const currentBase = continuumAt(profile, current.x);
-    const previousNorm = Math.abs(previousBase) > threshold ? 1 - previous.y / previousBase : 0;
-    const currentNorm = Math.abs(currentBase) > threshold ? 1 - current.y / currentBase : 0;
-    area += 0.5 * (previousNorm + currentNorm) * (current.x - previous.x);
+  let prevX = intMin;
+  let prevNorm = (() => {
+    const base = continuumAt(profile, intMin);
+    const y = base + gaussianValue(profile.amplitude, profile.mean, profile.sigma, intMin);
+    return Math.abs(base) > threshold ? 1 - y / base : 0;
+  })();
+
+  for (let index = 1; index <= steps; index += 1) {
+    const x = intMin + (index / steps) * (intMax - intMin);
+    const base = continuumAt(profile, x);
+    const y = base + gaussianValue(profile.amplitude, profile.mean, profile.sigma, x);
+    const norm = Math.abs(base) > threshold ? 1 - y / base : 0;
+    area += 0.5 * (prevNorm + norm) * (x - prevX);
+    prevX = x;
+    prevNorm = norm;
   }
   return area;
 }
@@ -2404,7 +2414,7 @@ function handleMouseMove(event) {
   }
 
   if (point.x < plot.left || point.x > width - plot.right || point.y < plot.top || point.y > height - plot.bottom) {
-    mouseReadout.textContent = "Rest x: - | Flux: -";
+    mouseReadout.textContent = "Rest λ: - | Flux: -";
     return;
   }
 
@@ -2419,7 +2429,7 @@ function handleMouseMove(event) {
     : 4;
   const fmtX = v => v.toFixed(xDec);
 
-  mouseReadout.textContent = `Rest x: ${fmtX(restX)} Å | Obs x: ${fmtX(observedX)} Å | Flux: ${formatNumber(flux)}`;
+  mouseReadout.textContent = `Rest λ: ${fmtX(restX)} Å | Obs λ: ${fmtX(observedX)} Å | Flux: ${formatNumber(flux)}`;
 }
 
 function finishDragZoom() {
